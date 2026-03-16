@@ -1,0 +1,5 @@
+[phases.install]
+cmds = ["npm install discord.js@14.16.3 dotenv@16.4.5 --no-audit --no-fund"]
+
+[start]
+cmd = "node index.js"
