@@ -4,7 +4,7 @@ const { Client, Collection, Events, GatewayIntentBits, REST, Routes } = require(
 const fs     = require('fs');
 const path   = require('path');
 const config = require('./config.json');
-const db     = require('./database/database');
+const db     = require('./database.js');
 
 const client = new Client({
     intents: [
@@ -23,10 +23,19 @@ client.bauFlowData = new Map();
 client.avisarFlow  = new Map();
 
 const loadEvents = () => {
-    const eventsPath = path.join(__dirname, 'events');
-    for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
+    const eventFiles = [
+        'guildMemberAdd.js',
+        'interactionCreate.js',
+        'interactionCreateAdmin.js',
+        'messageCreate.js',
+        'messageCreateBau.js',
+        'ready.js',
+        'securityFilters.js',
+        'voiceStatePonto.js'
+    ];
+    for (const file of eventFiles) {
         try {
-            const event = require('./events/' + file);
+            const event = require('./' + file);
             if (!event.name || !event.execute) continue;
             client[event.once ? 'once' : 'on'](event.name, (...args) => event.execute(...args));
             console.log('  ✓ Evento: ' + file);
