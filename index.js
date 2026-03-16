@@ -35,7 +35,7 @@ const loadEvents = () => {
     ];
     for (const file of eventFiles) {
         try {
-            const event = require('./' + file);
+            const event = require('./events/' + file);
             if (!event.name || !event.execute) continue;
             client[event.once ? 'once' : 'on'](event.name, (...args) => event.execute(...args));
             console.log('  ✓ Evento: ' + file);
