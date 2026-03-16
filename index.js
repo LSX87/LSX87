@@ -4,7 +4,7 @@ const { Client, Collection, Events, GatewayIntentBits, REST, Routes } = require(
 const fs     = require('fs');
 const path   = require('path');
 const config = require('./config.json');
-const db     = require('./database.js');
+const db     = require('./database/database');
 
 const client = new Client({
     intents: [
