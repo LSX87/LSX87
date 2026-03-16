@@ -30,7 +30,6 @@ const loadEvents = () => {
         'messageCreate.js',
         'messageCreateBau.js',
         'ready.js',
-        'securityFilters.js',
         'voiceStatePonto.js'
     ];
     for (const file of eventFiles) {
