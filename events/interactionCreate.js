@@ -18,7 +18,11 @@ function getVoice() {
     }
     return _voiceCmds;
 }
-const { showBauContents } = require('./messageCreateBau');
+// showBauContents lazy para não quebrar na inicialização
+function getShowBau() {
+    try { return require('./messageCreateBau').showBauContents; }
+    catch(e) { console.error('[BAU] Erro ao carregar:', e.message); return null; }
+}
 
 const fmt     = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nomeBot = () => config.nomeBot || 'Fuminho';
