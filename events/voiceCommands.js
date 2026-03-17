@@ -6,7 +6,6 @@ const { falarNoCanal }               = require('../src/voice/tts');
 const config = require('../config.json');
 
 const isStaff = i => i.member.roles.cache.has(config.cargos?.staff) || i.user.id === config.ownerId;
-
 const canaisVoz = new Map();
 
 async function handleEntrar(interaction) {
@@ -17,18 +16,16 @@ async function handleEntrar(interaction) {
         });
     }
 
-    // Verifica se está em canal de voz
     const canalVozId = interaction.member.voice?.channelId;
     if (!canalVozId) {
         return interaction.reply({
-            content: '🎙️ Você precisa estar em um canal de voz primeiro, parceiro!',
+            content: '🎙️ Entra em um canal de voz primeiro, parceiro!',
             flags: [MessageFlags.Ephemeral]
         });
     }
 
+    // IMPORTANTE: responde ANTES de conectar (Discord exige reply em até 3s)
     await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-
-    console.log('[VOICE CMD] /entrar chamado por ' + interaction.user.tag + ' no canal ' + canalVozId);
 
     const conexao = await entrarNoCanal(interaction.member, interaction.guild);
 
@@ -36,10 +33,6 @@ async function handleEntrar(interaction) {
         return interaction.editReply({
             content: [
                 '❌ Não consegui entrar no canal de voz.',
-                '',
-                '**Verifique no Discord Developer Portal:**',
-                '• Acesse discord.com/developers/applications',
-                '• Seu bot → Bot → Ative: SERVER MEMBERS INTENT e MESSAGE CONTENT INTENT',
                 '',
                 '**Verifique as permissões do canal de voz:**',
                 '• Clique com botão direito no canal → Editar Canal → Permissões',
@@ -51,7 +44,6 @@ async function handleEntrar(interaction) {
     canaisVoz.set(interaction.guild.id, interaction.channel);
     iniciarEscuta(conexao, interaction.guild, interaction.channel, config.ownerId);
 
-    // Saudação em voz após 1.5s
     setTimeout(async () => {
         try { await falarNoCanal(conexao, 'Salve família, Fuminho na área. Pode falar comigo, na paz.'); }
         catch (_) {}
@@ -63,7 +55,7 @@ async function handleEntrar(interaction) {
         .setDescription(
             `> ✅ Conectado em <#${canalVozId}>\n` +
             `> 🤖 Escutando com IA Gemini\n` +
-            `> 💬 Fale naturalmente — eu respondo em voz\n` +
+            `> 💬 Fale naturalmente — voz → texto → Gemini → voz\n` +
             `> \u200b\n` +
             `> **Comandos de voz:**\n` +
             `> • _"Limpar X mensagens"_\n` +
