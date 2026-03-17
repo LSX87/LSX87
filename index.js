@@ -392,11 +392,6 @@ process.on('uncaughtException',  err => console.error('uncaughtException:',  err
 
 
 // ═══ SECURITY FILTERS (inline) ═══════════════════════════════════
-// events/securityFilters.js
-// Segurança: links, imagens, palavras proibidas, spam → timeout ou ban
-const { EmbedBuilder } = require('discord.js');
-const config = require('./config.json');
-const db     = require('./database/database');
 
 const LINK_PATTERNS = [
     /discord\.gg\/[a-zA-Z0-9]+/gi,
@@ -550,8 +545,6 @@ module.exports = { checkSecurityFilters, sendLogEmbed };
 // ═══ VOICE STATE PONTO (inline) ══════════════════════════════════
 // events/voiceStatePonto.js — Bate-ponto automático por canal de voz
 const { Events, EmbedBuilder } = require('discord.js');
-const config = require('./config.json');
-const db     = require('./database/database');
 
 const nomeBot = () => config.nomeBot || 'Fuminho';
 const VERDE   = 0x2ECC71;
