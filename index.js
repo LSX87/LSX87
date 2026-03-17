@@ -214,6 +214,12 @@ const SLASH_COMMANDS = [
         { type: 1, name: 'remover', description: 'Remove resposta', options: [{ type: 3, name: 'gatilho', description: 'Palavra-chave', required: true }] },
         { type: 1, name: 'listar', description: 'Lista todas as respostas' }
     ]},
+    { name: 'hipster', description: '🌿 Reescreve no sotaque cria formal', options: [
+        { type: 3, name: 'texto', description: 'Texto para reescrever', required: true },
+        { type: 3, name: 'modo', description: 'basico ou ia', required: false, choices: [{ name: 'Básico', value: 'basico' }, { name: 'IA Gemini', value: 'ia' }] }
+    ]},
+    { name: 'entrar',    description: '🎙️ Fuminho entra no canal de voz e começa a ouvir (Staff)' },
+    { name: 'sair_voz',  description: '🔇 Fuminho sai do canal de voz' },
     { name: 'desligar',  description: '🔴 Desliga o bot (só dono)' },
     { name: 'reiniciar', description: '🔄 Reinicia o bot (só dono)' },
     { name: 'limpar',    description: '🧹 Apaga mensagens do canal (só dono)' }
