@@ -32,7 +32,7 @@ module.exports = {
                     case 'limpeza':       return await handleLimpeza(interaction);
                     case 'cargo':         return await handleCargo(interaction);
                     case 'regras':        return await handleRegras(interaction);
-                    case 'votacao':       return await handleEvento(interaction);
+                    case 'enquete':       return await handleEnquete(interaction);
                     case 'notificar':     return await handleNotificar(interaction);
                     case 'config':        return await handleConfig(interaction);
                     case 'resposta':      return await handleResposta(interaction);
@@ -818,68 +818,189 @@ async function handleConfigModal(interaction) {
 }
 
 // ══════════════════════════════════════════════
-//  /votacao
+//  /enquete
 // ══════════════════════════════════════════════
-async function handleEvento(interaction) {
+async function handleEnquete(interaction) {
     const sub     = interaction.options.getSubcommand();
-    const eventos = config.eventos || {};
+    const guildId = interaction.guild.id;
 
-    if (sub === 'ver') {
-        const embed = new EmbedBuilder().setColor('Gold').setTitle('🗳️ VOTACOES').setDescription('Vota com `/votacao votar`!').setTimestamp();
-        for (const [key, ev] of Object.entries(eventos)) {
-            if (!ev.ativo) continue;
-            const opcoes = ev.pilotos || ev.times || ev.paises || [];
-            embed.addFields({ name: ev.nome, value: `${ev.descricao}\nOpcoes: ${opcoes.slice(0,5).join(', ')}`, inline: false });
-        }
-        return interaction.reply({ embeds: [embed] });
+    // ── CRIAR ──
+    if (sub === 'criar') {
+        if (!isStaff(interaction)) return interaction.reply({ content: 'Só a Staff pode criar enquetes.', flags: [MessageFlags.Ephemeral] });
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+        const pergunta = interaction.options.getString('pergunta');
+        const opcoesBruto = interaction.options.getString('opcoes');
+        const duracao = interaction.options.getString('duracao') || '24h';
+        const opcoes = opcoesBruto.split(',').map(o => o.trim()).filter(Boolean).slice(0, 8);
+
+        if (opcoes.length < 2) return interaction.editReply({ content: 'Mínimo 2 opções, brother!' });
+
+        // Reescrever pergunta em hipster maiúsculo 🌿
+        let perguntaFinal = pergunta;
+        try {
+            const { reescreverHipster } = require('../hipsterRewriter');
+            perguntaFinal = (await reescreverHipster(pergunta, 'ia')).toUpperCase();
+        } catch (_) { perguntaFinal = pergunta.toUpperCase(); }
+
+        const id = Date.now().toString(36).toUpperCase();
+        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+        const opcoesTexto = opcoes.map((o, i) => `${emojis[i]} **${o.toUpperCase()}**`).join('\n');
+
+        const embed = new EmbedBuilder()
+            .setColor(0x9B59B6)
+            .setTitle('🗳️  ENQUETE DO GUETO')
+            .setDescription(`\u200b\n**${perguntaFinal}**\n\u200b`)
+            .addFields(
+                { name: '━━━━━━━  📊  OPÇÕES  ━━━━━━━', value: opcoesTexto, inline: false },
+                { name: '\u200b', value: `> 🆔 ID: \`${id}\`\n> ⏱️ Duração: \`${duracao}\`\n> 👤 Criada por: ${interaction.member}`, inline: false }
+            )
+            .setFooter({ text: 'Fuminho 🌿 · Vote com /enquete votar' })
+            .setTimestamp();
+
+        const canalEnquete = await getChannel(interaction, 'avisos');
+        const msg = await canalEnquete.send({ embeds: [embed] });
+
+        // Salvar enquete no banco
+        const db2 = require('../database/database');
+        db2.salvarEnquete(guildId, id, {
+            id, pergunta: perguntaFinal, opcoes,
+            votos: {}, criador: interaction.user.id,
+            messageId: msg.id, canalId: canalEnquete.id,
+            timestamp: Date.now(), ativa: true, duracao
+        });
+
+        return interaction.editReply({ content: `✅ Enquete \`${id}\` criada em ${canalEnquete}!` });
     }
+
+    // ── VOTAR ──
     if (sub === 'votar') {
-        const eventoKey = interaction.options.getString('evento');
-        const escolha   = interaction.options.getString('escolha');
-        const ev        = eventos[eventoKey];
-        if (!ev || !ev.ativo) return interaction.reply({ content: 'Votacao nao disponivel.', flags: [MessageFlags.Ephemeral] });
-        const votoExistente = await db.getVotoEvento(eventoKey, interaction.user.id);
-        if (votoExistente) return interaction.reply({ content: `Voce ja votou: **${votoExistente.escolha}**.`, flags: [MessageFlags.Ephemeral] });
-        await db.setVotoEvento(eventoKey, interaction.user.id, escolha);
-        await db.addVotoEvento(eventoKey, interaction.user.id, escolha);
-        const embed = new EmbedBuilder().setColor('Gold').setTitle(`VOTO REGISTRADO — ${ev.nome.toUpperCase()}`)
-            .addFields({ name: 'Votante', value: interaction.member.displayName, inline: true }, { name: 'Escolha', value: escolha, inline: true }).setTimestamp();
-        return interaction.reply({ embeds: [embed] });
+        const id = interaction.options.getString('id').toUpperCase();
+        const opcaoNum = parseInt(interaction.options.getString('opcao')) - 1;
+        const db2 = require('../database/database');
+        const enquete = db2.getEnquete(guildId, id);
+        if (!enquete) return interaction.reply({ content: `Enquete \`${id}\` não encontrada.`, flags: [MessageFlags.Ephemeral] });
+        if (!enquete.ativa) return interaction.reply({ content: 'Essa enquete já foi encerrada, brother!', flags: [MessageFlags.Ephemeral] });
+        if (opcaoNum < 0 || opcaoNum >= enquete.opcoes.length) return interaction.reply({ content: `Opção inválida! Use 1 a ${enquete.opcoes.length}.`, flags: [MessageFlags.Ephemeral] });
+        if (enquete.votos[interaction.user.id] !== undefined) return interaction.reply({ content: `Você já votou nessa enquete! Votou em: **${enquete.opcoes[enquete.votos[interaction.user.id]].toUpperCase()}**`, flags: [MessageFlags.Ephemeral] });
+
+        enquete.votos[interaction.user.id] = opcaoNum;
+        db2.salvarEnquete(guildId, id, enquete);
+
+        const totalVotos = Object.keys(enquete.votos).length;
+        return interaction.reply({
+            content: `✅ Voto registrado! Você votou em **${enquete.opcoes[opcaoNum].toUpperCase()}**\n> Total de votos: \`${totalVotos}\``,
+            flags: [MessageFlags.Ephemeral]
+        });
     }
+
+    // ── RESULTADO ──
     if (sub === 'resultado') {
-        if (!isStaff(interaction)) return interaction.reply({ content: 'So a Staff.', flags: [MessageFlags.Ephemeral] });
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-        const eventoKey = interaction.options.getString('evento');
-        const ev        = eventos[eventoKey];
-        const todos     = await db.getVotosEvento(eventoKey);
-        const cont = {};
-        for (const voto of Object.values(todos)) { if (voto?.escolha) cont[voto.escolha] = (cont[voto.escolha] || 0) + 1; }
-        const total  = Object.values(cont).reduce((a, b) => a + b, 0);
-        const sorted = Object.entries(cont).sort((a, b) => b[1] - a[1]);
-        const embed  = new EmbedBuilder().setColor('Gold').setTitle(`RESULTADO — ${ev?.nome || eventoKey}`).setDescription(`${total} voto(s)`).setTimestamp();
-        if (!sorted.length) { embed.addFields({ name: 'Votos', value: 'Nenhum ainda.', inline: false }); }
-        else {
-            const barras = sorted.map(([op, qt]) => { const pct = total > 0 ? Math.round((qt/total)*100) : 0; const b = '█'.repeat(Math.round(pct/10)) + '░'.repeat(10 - Math.round(pct/10)); return `**${op}**\n${b} ${qt} — ${pct}%`; }).join('\n\n');
-            embed.addFields({ name: 'Placar', value: barras, inline: false });
-        }
-        return interaction.editReply({ embeds: [embed] });
+        if (!isStaff(interaction)) return interaction.reply({ content: 'Só a Staff.', flags: [MessageFlags.Ephemeral] });
+        const id = interaction.options.getString('id').toUpperCase();
+        const db2 = require('../database/database');
+        const enquete = db2.getEnquete(guildId, id);
+        if (!enquete) return interaction.reply({ content: `Enquete \`${id}\` não encontrada.`, flags: [MessageFlags.Ephemeral] });
+
+        const contagem = {};
+        enquete.opcoes.forEach((_, i) => contagem[i] = 0);
+        Object.values(enquete.votos).forEach(v => contagem[v] = (contagem[v] || 0) + 1);
+        const total = Object.values(contagem).reduce((a, b) => a + b, 0);
+
+        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+        const barras = enquete.opcoes.map((op, i) => {
+            const qt = contagem[i] || 0;
+            const pct = total > 0 ? Math.round((qt / total) * 100) : 0;
+            const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+            return `${emojis[i]} **${op.toUpperCase()}**\n> \`${bar}\` **${qt}** votos — **${pct}%**`;
+        }).join('\n\n');
+
+        const embed = new EmbedBuilder()
+            .setColor(enquete.ativa ? 0x9B59B6 : 0x95A5A6)
+            .setTitle(`📊  RESULTADO — ${enquete.ativa ? '🟢 ATIVA' : '🔴 ENCERRADA'}`)
+            .setDescription(`**${enquete.pergunta}**\n\u200b`)
+            .addFields(
+                { name: '━━━━━━━  📊  PLACAR  ━━━━━━━', value: barras || 'Nenhum voto ainda.', inline: false },
+                { name: '\u200b', value: `> 🆔 ID: \`${id}\`\n> 🗳️ Total: \`${total} votos\``, inline: false }
+            )
+            .setFooter({ text: 'Fuminho 🌿 · Enquete' })
+            .setTimestamp();
+
+        return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
     }
-    if (sub === 'anunciar') {
-        if (!isStaff(interaction)) return interaction.reply({ content: 'So a Staff.', flags: [MessageFlags.Ephemeral] });
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-        const eventoKey = interaction.options.getString('evento');
-        const detalhe   = interaction.options.getString('detalhe') || '';
-        const ev        = eventos[eventoKey];
-        if (!ev) return interaction.editReply({ content: 'Votacao nao encontrada.' });
-        const opcoes = ev.pilotos || ev.times || ev.paises || [];
-        const embed  = new EmbedBuilder().setColor('Gold').setTitle(`VOTACAO: ${ev.nome.toUpperCase()}`)
-            .setDescription(ev.descricao + (detalhe ? `\n\n${detalhe}` : ''))
-            .addFields({ name: 'Opcoes', value: opcoes.slice(0,8).join(', ') || 'Ver votacao', inline: false }, { name: 'Como votar', value: 'Use `/votacao votar`!', inline: false }).setTimestamp();
-        const canal = await getChannel(interaction, 'eventos');
-        await canal.send({ embeds: [embed] });
-        return interaction.editReply({ content: `Votacao **${ev.nome}** anunciada!` });
+
+    // ── ENCERRAR ──
+    if (sub === 'encerrar') {
+        if (!isStaff(interaction)) return interaction.reply({ content: 'Só a Staff.', flags: [MessageFlags.Ephemeral] });
+        const id = interaction.options.getString('id').toUpperCase();
+        const db2 = require('../database/database');
+        const enquete = db2.getEnquete(guildId, id);
+        if (!enquete) return interaction.reply({ content: `Enquete \`${id}\` não encontrada.`, flags: [MessageFlags.Ephemeral] });
+        if (!enquete.ativa) return interaction.reply({ content: 'Enquete já encerrada!', flags: [MessageFlags.Ephemeral] });
+
+        enquete.ativa = false;
+        db2.salvarEnquete(guildId, id, enquete);
+
+        const contagem = {};
+        enquete.opcoes.forEach((_, i) => contagem[i] = 0);
+        Object.values(enquete.votos).forEach(v => contagem[v] = (contagem[v] || 0) + 1);
+        const total = Object.values(contagem).reduce((a, b) => a + b, 0);
+        const vencedorIdx = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0];
+        const vencedor = enquete.opcoes[vencedorIdx]?.toUpperCase() || 'EMPATE';
+
+        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+        const barras = enquete.opcoes.map((op, i) => {
+            const qt = contagem[i] || 0;
+            const pct = total > 0 ? Math.round((qt / total) * 100) : 0;
+            const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+            return `${emojis[i]} **${op.toUpperCase()}**\n> \`${bar}\` **${qt}** votos — **${pct}%**`;
+        }).join('\n\n');
+
+        const embed = new EmbedBuilder()
+            .setColor(0x57F287)
+            .setTitle('🏆  ENQUETE ENCERRADA!')
+            .setDescription(`**${enquete.pergunta}**\n\u200b`)
+            .addFields(
+                { name: '━━━━━━━  📊  RESULTADO FINAL  ━━━━━━━', value: barras || 'Nenhum voto.', inline: false },
+                { name: '🏆  VENCEDOR', value: `**${vencedor}** com **${contagem[vencedorIdx] || 0}** votos!`, inline: false }
+            )
+            .setFooter({ text: 'Fuminho 🌿 · Enquete encerrada' })
+            .setTimestamp();
+
+        try {
+            const canal = await interaction.guild.channels.fetch(enquete.canalId);
+            await canal.send({ embeds: [embed] });
+        } catch (_) {}
+
+        return interaction.reply({ content: `✅ Enquete \`${id}\` encerrada! Vencedor: **${vencedor}**`, flags: [MessageFlags.Ephemeral] });
+    }
+
+    // ── LISTAR ──
+    if (sub === 'listar') {
+        const db2 = require('../database/database');
+        const ativas = Object.values(db2.getEnquetes(guildId)).filter(e => e.ativa);
+
+        if (!ativas.length) return interaction.reply({ content: 'Nenhuma enquete aberta no momento, brother!', flags: [MessageFlags.Ephemeral] });
+
+        const embed = new EmbedBuilder()
+            .setColor(0x9B59B6)
+            .setTitle('🗳️  ENQUETES ABERTAS')
+            .setFooter({ text: 'Fuminho 🌿 · Vote com /enquete votar' })
+            .setTimestamp();
+
+        ativas.slice(0, 10).forEach(e => {
+            const totalVotos = Object.keys(e.votos).length;
+            embed.addFields({
+                name: `🆔 ${e.id}`,
+                value: `> **${e.pergunta}**\n> 🗳️ ${totalVotos} votos · ${e.opcoes.length} opções`,
+                inline: false
+            });
+        });
+
+        return interaction.reply({ embeds: [embed] });
     }
 }
+
 
 // ══════════════════════════════════════════════
 //  /resposta
@@ -930,7 +1051,7 @@ async function handleAjuda(interaction) {
             { name: '🏆 RANK MENSAL',  value: '`/rank ver` — Ver rank do mes\n`/rank meta` — Mudar meta (Staff)\n`/rank fechar` — Fechar mes e dar pontos (Staff)\n`/rank resetar` — Zerar rank (Staff)', inline: false },
             { name: '🌿 PONTOS',       value: '`/pontos ver` — Ver seus pontos e nivel\n`/pontos ranking` — Top 10 geral\n`/pontos dar` — Dar pontos (Staff)', inline: false },
             { name: '🕐 PONTO',        value: '`/ponto entrada` — Registrar chegada\n`/ponto saida` — Registrar saida + tempo', inline: false },
-            { name: '🗳️ VOTACOES',     value: '`/votacao ver` — Ver votacoes abertas\n`/votacao votar` — Votar no favorito', inline: false },
+            { name: '🗳️ ENQUETES',    value: '`/enquete criar` — Criar enquete (Staff)\n`/enquete votar` — Votar\n`/enquete resultado` — Ver resultado (Staff)\n`/enquete listar` — Ver enquetes abertas', inline: false },
             { name: '📜 SERVIDOR',     value: '`/regras` — Ver ou editar regras\n`/notificar` — YouTube, Twitch e Kick', inline: false },
             { name: '🌿 HIPSTER IA',   value: '`/hipster texto:` — Reescreve qualquer mensagem em tom hippie\n• Modo `basico` — rápido e sem IA\n• Modo `ia` — usa Google Gemini (mais criativo)', inline: false }
         );
