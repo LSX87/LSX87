@@ -9,10 +9,12 @@ const {
 const config = require('../config.json');
 const db     = require('../database/database');
 const { handleDesligar, handleReiniciar, handleLimpar } = require('./interactionCreateAdmin');
+const { handleEntrar, handleSairVoz } = require('./voiceCommands');
 const { showBauContents } = require('./messageCreateBau');
 
 const fmt     = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nomeBot = () => config.nomeBot || 'Fuminho';
+const moeda   = () => config.moeda || 'R$';
 const isStaff = i => i.member.roles.cache.has(config.cargos?.staff) || i.user.id === config.ownerId;
 
 module.exports = {
@@ -37,6 +39,8 @@ module.exports = {
                     case 'config':        return await handleConfig(interaction);
                     case 'resposta':      return await handleResposta(interaction);
                     case 'nivel':         return await handleNivel(interaction);
+                    case 'entrar':        return await handleEntrar(interaction);
+                    case 'sair_voz':     return await handleSairVoz(interaction);
                     case 'desligar':      return await handleDesligar(interaction);
                     case 'reiniciar':     return await handleReiniciar(interaction);
                     case 'hipster':       return await handleHipster(interaction);
@@ -90,25 +94,8 @@ async function handleRank(interaction) {
         const d       = new Date();
         const nomeMes = d.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
 
-        // Cargos com direito a aparecer no rank (mesma lista do messageCreateBau)
-        const CARGOS_COM_PONTOS = [
-            '1450471503001813084', // Jump-in
-            '1450472254759506035', // Old G
-            '1445176418345680997', // Outsider
-            '1450471295983550546', // Aliado
-        ];
-
-        // Filtra membros que possuem apenas cargos permitidos
-        const ranking = [];
-        for (const r of rankingRaw) {
-            try {
-                const member = await interaction.guild.members.fetch(r.userId).catch(() => null);
-                if (!member) continue;
-                if (member.roles.cache.has(config.cargos?.staff)) continue;
-                if (!CARGOS_COM_PONTOS.some(id => member.roles.cache.has(id))) continue;
-                ranking.push(r);
-            } catch (_) { continue; }
-        }
+        // Mostra todos que depositaram, sem fetch por membro (evita rate limit)
+        const ranking = rankingRaw.filter(r => r.valorTotal > 0);
 
         const totalDepositado = ranking.reduce((acc, r) => acc + r.valorTotal, 0);
         const pctMeta = Math.min(100, Math.round((totalDepositado / meta) * 100));
@@ -118,12 +105,12 @@ async function handleRank(interaction) {
             .setColor(0xFEE75C)
             .setTitle(`🏆  RANK DO GUETO — ${nomeMes.toUpperCase()}`)
             .setDescription(
-                `> 🎯 **Meta:** \`${config.moeda} ${fmt(meta)}\`\n` +
-                `> 💰 **Depositado:** \`${config.moeda} ${fmt(totalDepositado)}\`\n` +
+                `> 🎯 **Meta:** \`${moeda()} ${fmt(meta)}\`\n` +
+                `> 💰 **Depositado:** \`${moeda()} ${fmt(totalDepositado)}\`\n` +
                 `> 📊 **Progresso:** \`${barras}\` \`${pctMeta}%\`\n` +
                 `> \u200b`
             )
-            .setFooter({ text: `${nomeBot()} 🌿 · Deposita no /bau pra subir no rank` })
+            .setFooter({ text: `${nomeBot()} 🌿 · Só dinheiro sujo conta pro rank — firmeza` })
             .setTimestamp();
 
         if (ranking.length === 0) {
@@ -137,7 +124,7 @@ async function handleRank(interaction) {
                 const barMini = '▰'.repeat(mini) + '▱'.repeat(8 - mini);
                 return (
                     `${med} **${r.displayName}**\n` +
-                    `> \`${barMini}\` ${config.moeda} **${fmt(r.valorTotal)}** — ${r.depositos} dep.`
+                    `> \`${barMini}\` ${moeda()} **${fmt(r.valorTotal)}** — ${r.depositos} dep.`
                 );
             }).join('\n\n');
             embed.addFields({ name: `━━━━━━━  🏅  TOP ${top.length}  ━━━━━━━`, value: rankTexto, inline: false });
@@ -150,7 +137,7 @@ async function handleRank(interaction) {
         const novaM = interaction.options.getNumber('valor');
         config.rank = config.rank || {};
         config.rank.metaMensal = novaM;
-        return interaction.reply({ content: `✅ Meta atualizada pra **${config.moeda} ${fmt(novaM)}**!`, flags: [MessageFlags.Ephemeral] });
+        return interaction.reply({ content: `✅ Meta atualizada pra **${moeda()} ${fmt(novaM)}**!`, flags: [MessageFlags.Ephemeral] });
     }
 
     if (sub === 'fechar') {
@@ -185,7 +172,7 @@ async function handleRank(interaction) {
         const embed = new EmbedBuilder()
             .setColor(0x57F287)
             .setTitle(`🏆 RANK FECHADO — ${nomeMes.toUpperCase()}`)
-            .setDescription(`**Total depositado:** ${config.moeda} ${fmt(totalDep)}\n**Meta era:** ${config.moeda} ${fmt(meta)}`)
+            .setDescription(`**Total depositado:** ${moeda()} ${fmt(totalDep)}\n**Meta era:** ${moeda()} ${fmt(meta)}`)
             .setFooter({ text: `${nomeBot()} 🌿` })
             .setTimestamp();
 
@@ -193,7 +180,7 @@ async function handleRank(interaction) {
         if (top3.length > 0) {
             embed.addFields({
                 name: 'PODIO DO MES',
-                value: top3.map(r => `${medalhas[r.pos]} **${r.displayName}** — ${config.moeda} ${fmt(r.valorTotal)} | +${r.pts} pts`).join('\n'),
+                value: top3.map(r => `${medalhas[r.pos]} **${r.displayName}** — ${moeda()} ${fmt(r.valorTotal)} | +${r.pts} pts`).join('\n'),
                 inline: false
             });
         }
@@ -228,8 +215,8 @@ async function handleRank(interaction) {
             .setTitle('✅  Membro Adicionado ao Rank')
             .addFields(
                 { name: '👤  Membro',          value: `${membro}`,                                    inline: true },
-                { name: '💰  Valor adicionado', value: `\`${config.moeda} ${fmt(valor)}\``,            inline: true },
-                { name: '📊  Total no rank',    value: `\`${config.moeda} ${fmt(entry.valorTotal)}\``, inline: true }
+                { name: '💰  Valor adicionado', value: `\`${moeda()} ${fmt(valor)}\``,            inline: true },
+                { name: '📊  Total no rank',    value: `\`${moeda()} ${fmt(entry.valorTotal)}\``, inline: true }
             )
             .setFooter({ text: `Adicionado por ${interaction.member.displayName}  ·  ${nomeBot()} 🌿` })
             .setTimestamp();
@@ -343,18 +330,19 @@ async function handleBau(interaction) {
         )
         .setFooter({ text: `${nomeBot()} 🌿  ·  Expira em 10 minutos  ·  Depositar = pontos no rank` });
 
-    const canalBau = await getChannel(interaction, 'bau');
-    const qMsg     = await canalBau.send({ embeds: [embed] });
-    await interaction.reply({ content: '​', flags: [MessageFlags.Ephemeral] });
-    console.log(`[BAU] Fluxo aberto por ${interaction.user.tag} | canalBau.id=${canalBau.id}`);
+    // Manda o embed como mensagem normal no canal (o fluxo de baú usa messageCreate)
+    const canal = interaction.channel;
+    await interaction.reply({ content: '📦 Abrindo o baú...', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+    const qMsg = await canal.send({ embeds: [embed] });
+    console.log('[BAU] Fluxo aberto por ' + interaction.user.tag + ' | canal=' + canal.name);
 
-    // Timeout de 10 minutos: apaga a mensagem pendente e cancela o fluxo
+    // Timeout de 10 minutos: apaga o menu e cancela o fluxo
     const timeoutId = setTimeout(async () => {
         const flow = interaction.client.bauFlowData.get(interaction.user.id);
         if (flow) {
             interaction.client.bauFlowData.delete(interaction.user.id);
             try {
-                const ch = await interaction.client.channels.fetch(canalBau.id);
+                const ch = await interaction.client.channels.fetch(flow.channelId);
                 if (flow.questionMessageId) {
                     const m = await ch.messages.fetch(flow.questionMessageId);
                     await m.delete().catch(() => {});
@@ -366,7 +354,7 @@ async function handleBau(interaction) {
     interaction.client.bauFlowData.set(interaction.user.id, {
         step: 1, action: null, itemName: null,
         timestamp: Date.now(), questionMessageId: qMsg.id,
-        channelId: canalBau.id, timeoutId
+        channelId: canal.id, timeoutId
     });
 }
 
@@ -663,28 +651,86 @@ async function handleCargo(interaction) {
 // ══════════════════════════════════════════════
 //  /regras
 // ══════════════════════════════════════════════
+// Publica regras no canal — apaga a antiga e manda a nova (igual ao rank)
+async function publicarRegrasNoCanal(guild, client) {
+    try {
+        const canalId = config.canais?.regras;
+        if (!canalId) return;
+        const canal = await guild.channels.fetch(canalId).catch(() => null);
+        if (!canal) return;
+
+        const lista = await db.getRegras();
+        const texto = lista.map((r, i) => `**${i + 1}.** ${r}`).join('\n\n');
+        const embed = new EmbedBuilder()
+            .setColor(0xE74C3C)
+            .setTitle('📜  REGRAS DO GUETO')
+            .setDescription(texto)
+            .setFooter({ text: `${config.nomeBot || 'Fuminho'} 🌿  ·  Respeita as regras, brother` })
+            .setTimestamp();
+
+        // Apaga todas as mensagens de regras antigas do bot no canal
+        let continuar = true;
+        while (continuar) {
+            const msgs = await canal.messages.fetch({ limit: 50 });
+            const antigas = msgs.filter(m => m.author.id === client.user.id && m.embeds.length > 0);
+            if (antigas.size === 0) { continuar = false; break; }
+            for (const m of antigas.values()) await m.delete().catch(() => {});
+            if (antigas.size < 50) continuar = false;
+        }
+
+        await canal.send({ embeds: [embed] });
+    } catch (err) {
+        console.error('[REGRAS] Erro ao publicar:', err.message);
+    }
+}
+
 async function handleRegras(interaction) {
     const sub = interaction.options.getSubcommand(false);
 
+    // /regras ver — só mostra, não atualiza o canal
     if (!sub || sub === 'ver') {
         const lista = await db.getRegras();
         const texto = lista.map((r, i) => `**${i + 1}.** ${r}`).join('\n\n');
-        const embed = new EmbedBuilder().setColor('Red').setTitle('REGRAS DO GUETO').setDescription(texto).setTimestamp();
-        const canalRegras = await getChannel(interaction, 'regras');
-        if (canalRegras.id !== interaction.channel.id) {
-            await canalRegras.send({ embeds: [embed] });
-            return interaction.reply({ content: `Regras enviadas em ${canalRegras}!`, flags: [MessageFlags.Ephemeral] });
-        }
-        return interaction.reply({ embeds: [embed] });
+        const embed = new EmbedBuilder()
+            .setColor(0xE74C3C)
+            .setTitle('📜  REGRAS DO GUETO')
+            .setDescription(texto)
+            .setFooter({ text: `${nomeBot()} 🌿` })
+            .setTimestamp();
+        return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
     }
 
-    const temPerm = interaction.member.roles.cache.has(config.cargos?.regras) || interaction.user.id === config.ownerId;
-    if (!temPerm) return interaction.reply({ content: 'Sem permissao.', flags: [MessageFlags.Ephemeral] });
+    // Edição: só staff ou dono
+    const temPerm = isStaff(interaction) || interaction.user.id === config.ownerId;
+    if (!temPerm) return interaction.reply({ content: '🚫 Sem permissão.', flags: [MessageFlags.Ephemeral] });
 
+    await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
     const lista = await db.getRegras();
-    if (sub === 'adicionar') { lista.push(interaction.options.getString('texto')); await db.setRegras(lista); return interaction.reply({ content: `Regra ${lista.length} adicionada!`, flags: [MessageFlags.Ephemeral] }); }
-    if (sub === 'remover')   { const n = interaction.options.getInteger('numero'); if (n < 1 || n > lista.length) return interaction.reply({ content: 'Numero invalido.', flags: [MessageFlags.Ephemeral] }); lista.splice(n-1,1); await db.setRegras(lista); return interaction.reply({ content: `Regra ${n} removida!`, flags: [MessageFlags.Ephemeral] }); }
-    if (sub === 'editar')    { const n = interaction.options.getInteger('numero'); if (n < 1 || n > lista.length) return interaction.reply({ content: 'Numero invalido.', flags: [MessageFlags.Ephemeral] }); lista[n-1] = interaction.options.getString('texto'); await db.setRegras(lista); return interaction.reply({ content: `Regra ${n} atualizada!`, flags: [MessageFlags.Ephemeral] }); }
+
+    if (sub === 'adicionar') {
+        lista.push(interaction.options.getString('texto'));
+        await db.setRegras(lista);
+        await publicarRegrasNoCanal(interaction.guild, interaction.client);
+        return interaction.editReply({ content: `✅ Regra **${lista.length}** adicionada e canal atualizado!` });
+    }
+
+    if (sub === 'remover') {
+        const n = interaction.options.getInteger('numero');
+        if (n < 1 || n > lista.length) return interaction.editReply({ content: '❌ Número inválido.' });
+        lista.splice(n - 1, 1);
+        await db.setRegras(lista);
+        await publicarRegrasNoCanal(interaction.guild, interaction.client);
+        return interaction.editReply({ content: `✅ Regra **${n}** removida e canal atualizado!` });
+    }
+
+    if (sub === 'editar') {
+        const n = interaction.options.getInteger('numero');
+        if (n < 1 || n > lista.length) return interaction.editReply({ content: '❌ Número inválido.' });
+        lista[n - 1] = interaction.options.getString('texto');
+        await db.setRegras(lista);
+        await publicarRegrasNoCanal(interaction.guild, interaction.client);
+        return interaction.editReply({ content: `✅ Regra **${n}** editada e canal atualizado!` });
+    }
 }
 
 // ══════════════════════════════════════════════
@@ -719,7 +765,7 @@ async function handleConfig(interaction) {
             new ButtonBuilder().setCustomId('cfg_moeda').setLabel('Moeda (R$ / PP)').setStyle(ButtonStyle.Primary)
         );
         const embed = new EmbedBuilder().setColor('Blue').setTitle('⚙️ CONFIG — SERVIDOR')
-            .addFields({ name: 'Nome atual', value: config.nomeServidor || 'Gueto', inline: true }, { name: 'Moeda', value: config.moeda || 'R$', inline: true });
+            .addFields({ name: 'Nome atual', value: config.nomeServidor || 'Gueto', inline: true }, { name: 'Moeda', value: moeda() || 'R$', inline: true });
         return interaction.reply({ embeds: [embed], components: [row], flags: [MessageFlags.Ephemeral] });
     }
     if (sub === 'seguranca') {
@@ -755,7 +801,7 @@ async function handleConfig(interaction) {
             .addFields({ name: 'Status', value: chat.ativo ? 'ATIVO' : 'OFF', inline: true });
         return interaction.reply({ embeds: [embed], components: [row], flags: [MessageFlags.Ephemeral] });
     }
-    if (sub === 'votacao') {
+    if (sub === 'enquete' || sub === 'votacao') {
         const eventos = config.eventos || {};
         const nomes   = Object.entries(eventos).map(([k, v]) => `**${v.nome}** — ${v.ativo ? 'ATIVO' : 'INATIVO'}`).join('\n') || 'Nenhuma';
         const embed   = new EmbedBuilder().setColor('Gold').setTitle('🗳️ CONFIG — VOTACOES').addFields({ name: 'Votacoes', value: nomes, inline: false });
@@ -809,7 +855,7 @@ async function handleConfigModal(interaction) {
     else if (id === 'cfg_modal_not_twitch')      { config.notificacoes = config.notificacoes || {}; config.notificacoes.twitch  = val; msg = `Twitch: \`${val}\``; }
     else if (id === 'cfg_modal_not_kick')        { config.notificacoes = config.notificacoes || {}; config.notificacoes.kick    = val; msg = `Kick: \`${val}\``; }
     else if (id === 'cfg_modal_nome_servidor')   { config.nomeServidor = val; msg = `Nome: **${val}**`; }
-    else if (id === 'cfg_modal_moeda')           { config.moeda        = val; msg = `Moeda: **${val}**`; }
+    else if (id === 'cfg_modal_moeda')           { config.moeda   = val; msg = `Moeda: **${val}**`; }
     else if (id === 'cfg_modal_seg_timeout')     { const n = parseInt(val); if (isNaN(n)||n<1) return interaction.reply({ content: 'Valor invalido.', flags: [MessageFlags.Ephemeral] }); if (!config.seguranca) config.seguranca = {}; config.seguranca.timeoutMinutos = n; msg = `Timeout: **${n} min**`; }
     else if (id === 'cfg_modal_seg_palavras')    { if (!config.seguranca) config.seguranca = {}; config.seguranca.palavrasProibidas = val.split(',').map(s=>s.trim()).filter(Boolean); msg = `Palavras: **${config.seguranca.palavrasProibidas.join(', ')}**`; }
     else if (id === 'cfg_modal_seg_spam')        { const n = parseInt(val); if (isNaN(n)||n<1) return interaction.reply({ content: 'Valor invalido.', flags: [MessageFlags.Ephemeral] }); if (!config.seguranca) config.seguranca = {}; config.seguranca.maxMensagens = n; msg = `Anti-spam: **${n} msgs**`; }
@@ -1076,13 +1122,14 @@ async function handleAjuda(interaction) {
         .setThumbnail(interaction.client.user.displayAvatarURL())
         .setFooter({ text: `${bot} 🌿 Bot do Gueto` })
         .addFields(
-            { name: '📦 BAU DO GUETO', value: '`/bau` — Depositar dinheiro, gerenciar itens ou ver o bau\n• Depositar dinheiro = pontos no rank mensal', inline: false },
+            { name: '📦 BAU DO GUETO', value: '`/bau` — Depositar dinheiro, gerenciar itens ou ver o bau\n• Só **dinheiro sujo** conta pro rank mensal', inline: false },
             { name: '🏆 RANK MENSAL',  value: '`/rank ver` — Ver rank do mes\n`/rank meta` — Mudar meta (Staff)\n`/rank fechar` — Fechar mes e dar pontos (Staff)\n`/rank resetar` — Zerar rank (Staff)', inline: false },
             { name: '🌿 PONTOS',       value: '`/pontos ver` — Ver seus pontos e nivel\n`/pontos ranking` — Top 10 geral\n`/pontos dar` — Dar pontos (Staff)', inline: false },
             { name: '🕐 PONTO',        value: '`/ponto entrada` — Registrar chegada\n`/ponto saida` — Registrar saida + tempo', inline: false },
             { name: '🗳️ ENQUETES',    value: '`/enquete criar` — Criar enquete (Staff)\n`/enquete encerrar` — Encerrar e ver resultado (Staff)\n`/enquete listar` — Ver enquetes abertas\n• Para votar: clique no emoji da opção na mensagem!', inline: false },
             { name: '📜 SERVIDOR',     value: '`/regras` — Ver ou editar regras\n`/notificar` — YouTube, Twitch e Kick', inline: false },
-            { name: '🌿 HIPSTER IA',   value: '`/hipster texto:` — Reescreve qualquer mensagem em tom hippie\n• Modo `basico` — rápido e sem IA\n• Modo `ia` — usa Google Gemini (mais criativo)', inline: false }
+            { name: '🌿 CRIA FORMAL',  value: '`/hipster texto:` — Reescreve qualquer mensagem no sotaque cria formal\n• Modo `basico` — rápido e sem IA\n• Modo `ia` — usa Google Gemini (mais autêntico)', inline: false },
+            { name: '🎙️ VOZ & IA',     value: '`/entrar` — Fuminho entra no canal de voz e começa a ouvir\n`/sair_voz` — Sai do canal de voz\n• Fale naturalmente: voz → STT → Gemini → TTS\n• Dê comandos de voz: banir, limpar, silenciar, rank', inline: false }
         );
 
     if (staff) {
@@ -1201,12 +1248,12 @@ async function handleHipster(interaction) {
         const { EmbedBuilder: EB } = require('discord.js');
         const embed = new EB()
             .setColor(modo === 'ia' ? 0xFF6600 : 0x57F287)
-            .setTitle(`🌿 REESCRITA HIPSTER — Modo ${modo === 'ia' ? '🤖 IA' : '⚡ Básico'}`)
+            .setTitle(`🌿 SOTAQUE CRIA — Modo ${modo === 'ia' ? '🤖 IA Gemini' : '⚡ Básico'}`)
             .addFields(
                 { name: '📝 Original',     value: `\`\`\`${texto}\`\`\``,     inline: false },
                 { name: '✨ Versão Hippie', value: `\`\`\`${resultado}\`\`\``, inline: false }
             )
-            .setFooter({ text: 'Fuminho 🌿 · Reescritor Hipster' })
+            .setFooter({ text: 'Fuminho 🌿 · Sotaque Cria Formal' })
             .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
