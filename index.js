@@ -23,16 +23,9 @@ client.bauFlowData = new Map();
 client.avisarFlow  = new Map();
 
 const loadEvents = () => {
-    const eventFiles = [
-        'guildMemberAdd.js',
-        'interactionCreate.js',
-        'interactionCreateAdmin.js',
-        'messageCreate.js',
-        'messageCreateBau.js',
-        'ready.js',
-        'voiceStatePonto.js'
-    ];
-    for (const file of eventFiles) {
+    const eventsPath = path.join(__dirname, 'events');
+    if (!fs.existsSync(eventsPath)) return;
+    for (const file of fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'))) {
         try {
             const event = require('./events/' + file);
             if (!event.name || !event.execute) continue;
