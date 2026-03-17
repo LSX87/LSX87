@@ -39,6 +39,7 @@ module.exports = {
                     case 'nivel':         return await handleNivel(interaction);
                     case 'desligar':      return await handleDesligar(interaction);
                     case 'reiniciar':     return await handleReiniciar(interaction);
+                    case 'hipster':       return await handleHipster(interaction);
                     case 'limpar':        return await handleLimpar(interaction);
                 }
             }
@@ -557,10 +558,17 @@ async function enviarAviso(interaction, flow) {
     const canal = interaction.guild.channels.cache.get(flow.canalId);
     if (!canal) { try { await interaction.editReply({ content: 'Canal nao encontrado.', components: [], embeds: [] }); } catch (_) {} return; }
 
+    // Reescrever mensagem em modo hipster com IA 🌿
+    let mensagemFinal = flow.mensagem;
+    try {
+        const { reescreverHipster } = require('../hipsterRewriter');
+        mensagemFinal = await reescreverHipster(flow.mensagem, 'ia');
+    } catch (_) { mensagemFinal = flow.mensagem; }
+
     const embed = new EmbedBuilder()
         .setColor(color)
         .setTitle(`${emoji}  ${label}`)
-        .setDescription(`\u200b\n${flow.mensagem}\n\u200b`)
+        .setDescription(`\u200b\n${mensagemFinal}\n\u200b`)
         .addFields(
             { name: '👤  Enviado por', value: `${interaction.member}`,                         inline: true  },
             { name: '\u200b',          value: '\u200b',                                        inline: true  },
@@ -923,7 +931,8 @@ async function handleAjuda(interaction) {
             { name: '🌿 PONTOS',       value: '`/pontos ver` — Ver seus pontos e nivel\n`/pontos ranking` — Top 10 geral\n`/pontos dar` — Dar pontos (Staff)', inline: false },
             { name: '🕐 PONTO',        value: '`/ponto entrada` — Registrar chegada\n`/ponto saida` — Registrar saida + tempo', inline: false },
             { name: '🗳️ VOTACOES',     value: '`/votacao ver` — Ver votacoes abertas\n`/votacao votar` — Votar no favorito', inline: false },
-            { name: '📜 SERVIDOR',     value: '`/regras` — Ver ou editar regras\n`/notificar` — YouTube, Twitch e Kick', inline: false }
+            { name: '📜 SERVIDOR',     value: '`/regras` — Ver ou editar regras\n`/notificar` — YouTube, Twitch e Kick', inline: false },
+            { name: '🌿 HIPSTER IA',   value: '`/hipster texto:` — Reescreve qualquer mensagem em tom hippie\n• Modo `basico` — rápido e sem IA\n• Modo `ia` — usa Google Gemini (mais criativo)', inline: false }
         );
 
     if (staff) {
@@ -1023,5 +1032,36 @@ async function handleNivel(interaction) {
             .setFooter({ text: `${nomeBot()} 🌿` })
             .setTimestamp();
         return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+    }
+}
+
+// ══════════════════════════════════════════════
+//  /hipster
+// ══════════════════════════════════════════════
+async function handleHipster(interaction) {
+    const texto = interaction.options.getString('texto');
+    const modo  = interaction.options.getString('modo') || 'basico';
+
+    await interaction.deferReply();
+
+    try {
+        const { reescreverHipster } = require('../hipsterRewriter');
+        const resultado = await reescreverHipster(texto, modo);
+
+        const { EmbedBuilder: EB } = require('discord.js');
+        const embed = new EB()
+            .setColor(modo === 'ia' ? 0xFF6600 : 0x57F287)
+            .setTitle(`🌿 REESCRITA HIPSTER — Modo ${modo === 'ia' ? '🤖 IA' : '⚡ Básico'}`)
+            .addFields(
+                { name: '📝 Original',     value: `\`\`\`${texto}\`\`\``,     inline: false },
+                { name: '✨ Versão Hippie', value: `\`\`\`${resultado}\`\`\``, inline: false }
+            )
+            .setFooter({ text: 'Fuminho 🌿 · Reescritor Hipster' })
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+        console.error('Erro hipster:', err);
+        await interaction.editReply({ content: 'Opa, deu ruim aí, brother! 😅' });
     }
 }
