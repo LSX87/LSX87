@@ -1,12 +1,12 @@
 [build]
 builder = "nixpacks"
- 
+
 [build.nixpacksPlan.phases.setup]
 nixPkgs = ["nodejs_18", "ffmpeg", "python3"]
- 
+
 [build.nixpacksPlan.phases.install]
-cmds = ["npm i --legacy-peer-deps"]
- 
+cmds = ["npm install --force"]
+
 [deploy]
 startCommand = "node index.js"
 restartPolicyType = "ON_FAILURE"
