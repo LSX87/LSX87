@@ -11,3 +11,4 @@ cmds = ["npm install --force"]
 startCommand = "node index.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
+region = "us-east4"
