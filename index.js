@@ -1,10 +1,16 @@
 // index.js — Fuminho Bot 🌿
 require('dotenv').config();
-const { Client, Collection, Events, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, Collection, Events, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
 const fs     = require('fs');
 const path   = require('path');
 const config = require('./config.json');
 const db     = require('./database/database');
+
+// IDs de canais que o bot NUNCA deve apagar mensagens
+const CANAIS_IGNORADOS_SEGURANCA = [
+    '1483168263113408784', // fotos
+    '1483146567337771228', // memes
+];
 
 const client = new Client({
     intents: [
@@ -13,7 +19,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildVoiceStates   // necessário pro ponto por voz
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
@@ -36,6 +42,134 @@ const loadEvents = () => {
         }
     }
 };
+
+// ═══ SEGURANÇA INLINE ════════════════════════════════════════════
+const LINK_PATTERNS = [
+    /discord\.gg\/[a-zA-Z0-9]+/gi,
+    /free.*nitro/gi,
+    /discord\.nitro\.[a-z]+/gi,
+    /https?:\/\/(?!(?:www\.)?(?:youtube\.com|youtu\.be|twitch\.tv|imgur\.com|discord\.com|discordapp\.com))[^\s]+/gi,
+];
+const spamMap = new Map();
+
+client.on(Events.MessageCreate, async (message) => {
+    if (!message.guild || !message.member || message.author.bot) return;
+
+    // Log chat
+    try { db.logChat(message.author.id, message.author.tag, message.member.displayName, message.guild.id, message.channel.name, message.content); } catch(_) {}
+
+    // Respostas automáticas
+    try {
+        const respostas = db.getRespostas();
+        const lower = message.content.toLowerCase();
+        for (const [gatilho, resposta] of Object.entries(respostas)) {
+            if (lower.includes(gatilho.toLowerCase())) {
+                await message.reply(resposta);
+                break;
+            }
+        }
+    } catch(_) {}
+
+    // Segurança — ignorar canais de fotos/memes e outros configurados
+    const canaisIgn = [...CANAIS_IGNORADOS_SEGURANCA, ...(config.seguranca?.canaisIgnorados || [])];
+    if (canaisIgn.includes(message.channel.id)) return;
+
+    const seg = config.seguranca;
+    if (!seg?.ativo) return;
+    const isStaff = message.member.roles.cache.has(config.cargos?.staff);
+    const isOwner = message.author.id === config.ownerId;
+    if (isStaff || isOwner) return;
+
+    let motivo = null;
+
+    if (seg.banirLinks) {
+        const lower = message.content.toLowerCase();
+        for (const pattern of LINK_PATTERNS) {
+            pattern.lastIndex = 0;
+            if (pattern.test(lower)) { motivo = '🔗 Link suspeito'; break; }
+        }
+    }
+    if (!motivo && seg.banirImagens && message.attachments.size > 0) {
+        motivo = '🖼️ Imagem não autorizada';
+    }
+    if (!motivo && seg.palavrasProibidas?.length > 0) {
+        const lower = message.content.toLowerCase();
+        for (const palavra of seg.palavrasProibidas) {
+            if (lower.includes(palavra.toLowerCase())) { motivo = '🤬 Palavra proibida'; break; }
+        }
+    }
+    if (!motivo && seg.maxMensagens > 0) {
+        const uid = message.author.id;
+        const agora = Date.now();
+        if (!spamMap.has(uid)) spamMap.set(uid, []);
+        const ts = spamMap.get(uid).filter(t => agora - t < (seg.tempoJanela || 3000));
+        ts.push(agora);
+        spamMap.set(uid, ts);
+        if (ts.length >= seg.maxMensagens) { motivo = '📨 Spam'; spamMap.delete(uid); }
+    }
+
+    if (motivo) {
+        try {
+            await message.delete().catch(() => {});
+            const min = seg?.timeoutMinutos || 10;
+            await message.member.timeout(min * 60 * 1000, motivo);
+            const aviso = await message.channel.send({ content: `> ⚠️ **${message.author.username}** foi silenciado por: *${motivo}*` });
+            setTimeout(() => aviso.delete().catch(() => {}), 8000);
+        } catch(err) { console.error('Erro segurança:', err.message); }
+    }
+});
+
+// ═══ BATE-PONTO POR VOZ INLINE ═══════════════════════════════════
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    try {
+        const callPontoId = config.canais?.call_ponto;
+        if (!callPontoId || callPontoId.startsWith('SEU_')) return;
+        const membro = newState.member || oldState.member;
+        if (!membro || membro.user.bot) return;
+        const guildId = (newState.guild || oldState.guild).id;
+        const uid = membro.user.id;
+        const entrou = !oldState.channelId && newState.channelId === callPontoId;
+        const saiu   = oldState.channelId === callPontoId && newState.channelId !== callPontoId;
+        if (!entrou && !saiu) return;
+        const tipo   = entrou ? 'entrada' : 'saida';
+        const ultimo = db.getUltimoPonto(uid, guildId);
+        if (tipo === 'entrada' && ultimo?.tipo === 'entrada') return;
+        if (tipo === 'saida' && (!ultimo || ultimo.tipo === 'saida')) return;
+        const reg = db.baterPonto(uid, membro.user.tag, membro.displayName, tipo, guildId);
+        let tempoPeriodo = '';
+        if (tipo === 'saida' && ultimo) {
+            const ms  = reg.timestamp - ultimo.timestamp;
+            const min = Math.floor(ms / 60000);
+            const h   = Math.floor(min / 60);
+            const m   = min % 60;
+            tempoPeriodo = `> ⏱️  **Tempo trabalhado:** \`${h}h ${m}min\``;
+        }
+        const canalTextoId = config.canais?.ponto;
+        let canalTexto = null;
+        if (canalTextoId && !canalTextoId.startsWith('SEU_')) {
+            try { canalTexto = await (newState.guild || oldState.guild).channels.fetch(canalTextoId); } catch (_) {}
+        }
+        if (!canalTexto) canalTexto = newState.channel || oldState.channel;
+        if (!canalTexto?.send) return;
+        const embed = new EmbedBuilder()
+            .setColor(entrou ? 0x2ECC71 : 0xE74C3C)
+            .setTitle(entrou ? '🟢  CHEGOU NA CALL — PONTO REGISTRADO' : '🔴  SAIU DA CALL — PONTO FECHADO')
+            .setDescription(
+                `> 👤  **Membro:** ${membro}\n` +
+                `> 🕐  **Horário:** \`${reg.data}\`\n` +
+                (tempoPeriodo ? tempoPeriodo + '\n' : '') +
+                `> 🎙️  **Canal:** \`${entrou ? newState.channel?.name : oldState.channel?.name}\``
+            )
+            .setThumbnail(membro.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({ text: 'Fuminho 🌿  ·  Ponto automático por voz' })
+            .setTimestamp();
+        const msg = await canalTexto.send({ embeds: [embed] });
+        setTimeout(() => msg.delete().catch(() => {}), 30000);
+    } catch (err) {
+        console.error('Erro voicePonto:', err.message);
+    }
+});
+
 
 const SLASH_COMMANDS = [
     { name: 'ajuda', description: '🌿 Mostra todos os comandos do Fuminho' },
@@ -256,15 +390,245 @@ process.on('unhandledRejection', err => console.error('unhandledRejection:', err
 process.on('uncaughtException',  err => console.error('uncaughtException:',  err?.message || err));
 
 
-// ─── VOICE STATE PONTO (inline) ──────────────────────────────────
-const { EmbedBuilder: EmbedVoice } = require('discord.js');
+
+// ═══ SECURITY FILTERS (inline) ═══════════════════════════════════
+// events/securityFilters.js
+// Segurança: links, imagens, palavras proibidas, spam → timeout ou ban
+const { EmbedBuilder } = require('discord.js');
+const config = require('./config.json');
+const db     = require('./database/database');
+
+const LINK_PATTERNS = [
+    /discord\.gg\/[a-zA-Z0-9]+/gi,
+    /bit\.ly\/[^\s]+/gi,
+    /tinyurl\.com\/[^\s]+/gi,
+    /goo\.gl\/[^\s]+/gi,
+    /discord\.nitro\.[a-z]+/gi,
+    /\b(phishing|scam)\b/gi,
+    /\b(malware|virus|trojan|ransomware)\b/gi,
+    /free.*nitro/gi,
+    /https?:\/\/(?!(?:www\.)?(?:youtube\.com|youtu\.be|twitch\.tv|imgur\.com|discord\.com|discordapp\.com))[^\s]+/gi,
+];
+
+// Anti-spam: conta mensagens por usuário em janela de tempo
+const spamMap = new Map();
+
+async function checkSecurityFilters(message) {
+    if (!message.guild || !message.member) return false;
+
+    const seg = config.seguranca;
+    if (!seg?.ativo) return false;
+
+    // Ignora staff, dono e cargos ignorados
+    const isStaff = message.member.roles.cache.has(config.cargos?.staff);
+    const isOwner = message.author.id === config.ownerId;
+    if (isStaff || isOwner) return false;
+
+    // Ignora canais configurados para ignorar
+    const canaisIgn = seg.canaisIgnorados || [];
+    if (canaisIgn.includes(message.channel.id)) return false;
+
+    let motivo = null;
+
+    // ── 1. Links suspeitos ──────────────────────────────────────────────────
+    if (seg.banirLinks) {
+        const lower = message.content.toLowerCase();
+        for (const pattern of LINK_PATTERNS) {
+            pattern.lastIndex = 0;
+            if (pattern.test(lower)) { motivo = '🔗 Link suspeito/não autorizado'; break; }
+        }
+    }
+
+    // ── 2. Imagens/arquivos ─────────────────────────────────────────────────
+    if (!motivo && seg.banirImagens && message.attachments.size > 0) {
+        motivo = '🖼️ Envio de imagem/arquivo não autorizado';
+    }
+
+    // ── 3. Palavras proibidas ───────────────────────────────────────────────
+    if (!motivo && seg.palavrasProibidas?.length > 0) {
+        const lower = message.content.toLowerCase();
+        for (const palavra of seg.palavrasProibidas) {
+            if (lower.includes(palavra.toLowerCase())) {
+                motivo = `🤬 Palavra proibida detectada`;
+                break;
+            }
+        }
+    }
+
+    // ── 4. Anti-spam ────────────────────────────────────────────────────────
+    if (!motivo && seg.maxMensagens > 0) {
+        const uid = message.author.id;
+        const agora = Date.now();
+        if (!spamMap.has(uid)) spamMap.set(uid, []);
+        const timestamps = spamMap.get(uid).filter(t => agora - t < (seg.tempoJanela || 3000));
+        timestamps.push(agora);
+        spamMap.set(uid, timestamps);
+        if (timestamps.length >= seg.maxMensagens) {
+            motivo = '📨 Spam detectado';
+            spamMap.delete(uid);
+        }
+    }
+
+    if (motivo) {
+        await aplicarPunicao(message, motivo);
+        return true;
+    }
+    return false;
+}
+
+async function aplicarPunicao(message, motivo) {
+    const { guild, author, channel, member } = message;
+    const seg     = config.seguranca;
+    const punicao = seg?.punicao || 'timeout'; // 'timeout' | 'ban' | 'kick'
+
+    try {
+        await message.delete().catch(() => {});
+
+        let tipoPunicao = '';
+        let descPunicao = '';
+
+        if (punicao === 'ban') {
+            await member.ban({ reason: `Segurança: ${motivo}`, deleteMessageSeconds: 0 });
+            tipoPunicao = '🔨 Banido';
+            descPunicao = 'permanente';
+        } else if (punicao === 'kick') {
+            await member.kick(`Segurança: ${motivo}`);
+            tipoPunicao = '👢 Expulso';
+            descPunicao = 'removido do servidor';
+        } else {
+            // Timeout (padrão)
+            const minutos = seg?.timeoutMinutos || 10;
+            const ms      = minutos * 60 * 1000;
+            await member.timeout(ms, `Segurança: ${motivo}`);
+            tipoPunicao = '⏱️ Silenciado';
+            descPunicao = `${minutos} minuto(s)`;
+        }
+
+        console.log(`🔴 PUNIÇÃO [${tipoPunicao}]: ${author.tag} — ${motivo}`);
+
+        // Aviso no canal
+        const aviso = await channel.send({
+            content: `> ⚠️ **${author.username}** foi **${tipoPunicao}** por: *${motivo}*`
+        });
+        setTimeout(() => aviso.delete().catch(() => {}), 8000);
+
+        // Salva no banco
+        await db.logPunicao(author.id, author.tag, guild.id, motivo, tipoPunicao);
+
+        // Log embed
+        await sendLogEmbed(guild,
+            `🚨 Punição Automática — ${tipoPunicao}`,
+            `**Usuário:** ${author.tag} (\`${author.id}\`)\n` +
+            `**Motivo:** ${motivo}\n` +
+            `**Canal:** <#${channel.id}>\n` +
+            `**Duração:** ${descPunicao}`,
+            'Red'
+        );
+
+    } catch (err) {
+        console.error('❌ Erro ao punir:', err.message);
+    }
+}
+
+async function sendLogEmbed(guild, title, description, color) {
+    const canalId = config.canais?.logs;
+    if (!canalId || canalId === 'SEU_CANAL_LOGS') return;
+    try {
+        const canal = await guild.channels.fetch(canalId).catch(() => null);
+        if (!canal) return;
+        const embed = new EmbedBuilder()
+            .setColor(color).setTitle(title).setDescription(description)
+            .setTimestamp()
+            .setFooter({ text: `${config.nomeServidor || 'Oficina'} — Segurança` });
+        await canal.send({ embeds: [embed] });
+    } catch (_) {}
+}
+
+module.exports = { checkSecurityFilters, sendLogEmbed };
+
+
+// ═══ VOICE STATE PONTO (inline) ══════════════════════════════════
+// events/voiceStatePonto.js — Bate-ponto automático por canal de voz
+const { Events, EmbedBuilder } = require('discord.js');
+const config = require('./config.json');
+const db     = require('./database/database');
+
+const nomeBot = () => config.nomeBot || 'Fuminho';
 const VERDE   = 0x2ECC71;
 const VERMELHO= 0xE74C3C;
 
+// module.exports = {
+    name: Events.VoiceStateUpdate,
+    async execute(oldState, newState) {
+        try {
+            const callPontoId = config.canais?.call_ponto;
+            if (!callPontoId || callPontoId.startsWith('SEU_')) return;
+
+            const membro  = newState.member || oldState.member;
+            if (!membro || membro.user.bot) return;
+
+            const guildId = (newState.guild || oldState.guild).id;
+            const uid     = membro.user.id;
+
+            const entrou = !oldState.channelId && newState.channelId === callPontoId;
+            const saiu   = oldState.channelId === callPontoId && newState.channelId !== callPontoId;
+
+            if (!entrou && !saiu) return;
+
+            const tipo   = entrou ? 'entrada' : 'saida';
+            const ultimo = db.getUltimoPonto(uid, guildId);
+
+            // Evita duplicata
+            if (tipo === 'entrada' && ultimo?.tipo === 'entrada') return;
+            if (tipo === 'saida'   && (!ultimo || ultimo.tipo === 'saida')) return;
+
+            const reg = db.baterPonto(uid, membro.user.tag, membro.displayName, tipo, guildId);
+
+            let tempoPeriodo = '';
+            if (tipo === 'saida' && ultimo) {
+                const ms  = reg.timestamp - ultimo.timestamp;
+                const min = Math.floor(ms / 60_000);
+                const h   = Math.floor(min / 60);
+                const m   = min % 60;
+                tempoPeriodo = `> ⏱️  **Tempo trabalhado:** \`${h}h ${m}min\``;
+            }
+
+            const canalTextoId = config.canais?.ponto;
+            let canalTexto = null;
+            if (canalTextoId && !canalTextoId.startsWith('SEU_')) {
+                try { canalTexto = await (newState.guild || oldState.guild).channels.fetch(canalTextoId); } catch (_) {}
+            }
+            if (!canalTexto) canalTexto = newState.channel || oldState.channel;
+            if (!canalTexto?.send) return;
+
+            const embed = new EmbedBuilder()
+                .setColor(entrou ? VERDE : VERMELHO)
+                .setTitle(entrou ? '🟢  CHEGOU NA CALL — PONTO REGISTRADO' : '🔴  SAIU DA CALL — PONTO FECHADO')
+                .setDescription(
+                    `> 👤  **Membro:** ${membro}\n` +
+                    `> 🕐  **Horário:** \`${reg.data}\`\n` +
+                    (tempoPeriodo ? tempoPeriodo + '\n' : '') +
+                    `> 🎙️  **Canal:** \`${entrou ? newState.channel?.name : oldState.channel?.name}\``
+                )
+                .setThumbnail(membro.user.displayAvatarURL({ dynamic: true }))
+                .setFooter({ text: `${nomeBot()} 🌿  ·  Ponto automático por voz` })
+                .setTimestamp();
+
+            const msg = await canalTexto.send({ embeds: [embed] });
+            setTimeout(() => msg.delete().catch(() => {}), 30000);
+
+        } catch (err) {
+            console.error('Erro no voiceStatePonto:', err.message);
+        }
+    }
+// };
+
+
+// Registrar voiceStatePonto no client
 client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-        const callPontoId = process.env.CANAL_CALL_PONTO;
-        if (!callPontoId) return;
+        const callPontoId = config.canais?.call_ponto;
+        if (!callPontoId || callPontoId.startsWith('SEU_')) return;
         const membro = newState.member || oldState.member;
         if (!membro || membro.user.bot) return;
         const guildId = (newState.guild || oldState.guild).id;
@@ -275,31 +639,32 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const tipo   = entrou ? 'entrada' : 'saida';
         const ultimo = db.getUltimoPonto(uid, guildId);
         if (tipo === 'entrada' && ultimo?.tipo === 'entrada') return;
-        if (tipo === 'saida'   && (!ultimo || ultimo.tipo === 'saida')) return;
+        if (tipo === 'saida' && (!ultimo || ultimo.tipo === 'saida')) return;
         const reg = db.baterPonto(uid, membro.user.tag, membro.displayName, tipo, guildId);
         let tempoPeriodo = '';
         if (tipo === 'saida' && ultimo) {
             const ms  = reg.timestamp - ultimo.timestamp;
-            const min = Math.floor(ms / 60_000);
+            const min = Math.floor(ms / 60000);
             const h   = Math.floor(min / 60);
             const m   = min % 60;
-            tempoPeriodo = `> ⏱️  **Tempo trabalhado:** \`${h}h ${m}min\``;
+            tempoPeriodo = `> ⏱️  **Tempo trabalhado:** \\`${h}h ${m}min\\``;
         }
-        const canalTextoId = process.env.CANAL_PONTO;
+        const canalTextoId = config.canais?.ponto;
         let canalTexto = null;
-        if (canalTextoId) {
+        if (canalTextoId && !canalTextoId.startsWith('SEU_')) {
             try { canalTexto = await (newState.guild || oldState.guild).channels.fetch(canalTextoId); } catch (_) {}
         }
         if (!canalTexto) canalTexto = newState.channel || oldState.channel;
         if (!canalTexto?.send) return;
-        const embed = new EmbedVoice()
-            .setColor(entrou ? VERDE : VERMELHO)
+        const { EmbedBuilder: EmbVoice } = require('discord.js');
+        const embed = new EmbVoice()
+            .setColor(entrou ? 0x2ECC71 : 0xE74C3C)
             .setTitle(entrou ? '🟢  CHEGOU NA CALL — PONTO REGISTRADO' : '🔴  SAIU DA CALL — PONTO FECHADO')
             .setDescription(
                 `> 👤  **Membro:** ${membro}\n` +
-                `> 🕐  **Horário:** \`${reg.data}\`\n` +
+                `> 🕐  **Horário:** \\`${reg.data}\\`\n` +
                 (tempoPeriodo ? tempoPeriodo + '\n' : '') +
-                `> 🎙️  **Canal:** \`${entrou ? newState.channel?.name : oldState.channel?.name}\``
+                `> 🎙️  **Canal:** \\`${entrou ? newState.channel?.name : oldState.channel?.name}\\``
             )
             .setThumbnail(membro.user.displayAvatarURL({ dynamic: true }))
             .setFooter({ text: 'Fuminho 🌿  ·  Ponto automático por voz' })
@@ -307,7 +672,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const msg = await canalTexto.send({ embeds: [embed] });
         setTimeout(() => msg.delete().catch(() => {}), 30000);
     } catch (err) {
-        console.error('Erro no voiceStatePonto:', err.message);
+        console.error('Erro voicePonto:', err.message);
     }
 });
 
