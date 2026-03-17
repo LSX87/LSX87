@@ -1,32 +1,31 @@
 {
   "comentario": "Este arquivo config.json é PÚBLICO e NÃO contém dados sensíveis",
   "comentario2": "Dados sensíveis estão em .env (que NUNCA deve ser commitado!)",
-
   "ownerId": "1096513448000630805",
-
+  "nomeBot": "Fuminho",
+  "nomeServidor": "Gueto",
+  "moeda": "R$",
   "canais": {
-    "logs":         "1445176465724539013",
-    "reuniao":      "1461941825852936334",
-    "avisos":       "1472683977675378778",
-    "regras":       "1445176470681948302",
+    "logs": "1445176465724539013",
+    "reuniao": "1461941825852936334",
+    "avisos": "1472683977675378778",
+    "regras": "1445176470681948302",
     "notificacoes": "1445176483025911859",
-    "boas_vindas":  "1445176465724539013",
-    "bau":          "1474254292826456155",
-    "ponto":        "1445176502667972723",
-    "call_ponto":   "1445176505771622592",
-    "eventos":      "1472683977675378778",
-    "rank":         "1461941792936300564",
-    "chat":         "1445176493477986486",
-    "geral":        "1445176479859343536"
+    "boas_vindas": "1445176465724539013",
+    "bau": "1474254292826456155",
+    "ponto": "1445176502667972723",
+    "call_ponto": "1445176505771622592",
+    "eventos": "1472683977675378778",
+    "rank": "1481823841935298670",
+    "chat": "1445176493477986486",
+    "geral": "1445176479859343536"
   },
-
   "cargos": {
-    "staff":      "1462479506567729264",
-    "cliente":    "1479235998800941168",
-    "membro":     "1445176421319315517",
+    "staff": "1462479506567729264",
+    "cliente": "1479235998800941168",
+    "membro": "1445176421319315517",
     "silenciado": "1445176433789112361"
   },
-
   "seguranca": {
     "ativo": true,
     "banirLinks": true,
@@ -35,18 +34,26 @@
     "tempoJanela": 3000,
     "punicao": "timeout",
     "timeoutMinutos": 10,
-    "palavrasProibidas": ["palavrao1", "palavrao2", "palavrao3"],
+    "palavrasProibidas": [
+      "palavrao1",
+      "palavrao2",
+      "palavrao3"
+    ],
     "canaisIgnorados": [],
     "cargosIgnorados": []
   },
-
   "autoLimpeza": {
     "ativo": true,
     "horario": "03:00",
-    "diasDaSemana": [1, 2, 3, 4, 5],
+    "diasDaSemana": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
     "canaisParaLimpar": []
   },
-
   "chat": {
     "ativo": true,
     "respostasAutomaticas": {
@@ -55,26 +62,39 @@
       "ajuda": "Bora! Usa /ajuda pra ver tudo que o Fuminho faz 🌿"
     }
   },
-
   "rank": {
     "metaMensal": 100000,
     "ativo": true
   },
-
   "niveis": {
     "cargos": [
-      { "nome": "OG",       "pontosNecessarios": 800 },
-      { "nome": "Jump-in",  "pontosNecessarios": 600 },
-      { "nome": "Old G",    "pontosNecessarios": 400 },
-      { "nome": "Outsider", "pontosNecessarios": 200 },
-      { "nome": "Aliado",   "pontosNecessarios": 0   }
+      {
+        "nome": "OG",
+        "pontosNecessarios": 800
+      },
+      {
+        "nome": "Jump-in",
+        "pontosNecessarios": 600
+      },
+      {
+        "nome": "Old G",
+        "pontosNecessarios": 400
+      },
+      {
+        "nome": "Outsider",
+        "pontosNecessarios": 200
+      },
+      {
+        "nome": "Aliado",
+        "pontosNecessarios": 0
+      }
     ],
     "pontosPorAcao": {
       "deposito_bau": 10,
-      "rank_1lugar":  100,
-      "rank_2lugar":  50,
-      "rank_3lugar":  25,
-      "rank_top10":   15
+      "rank_1lugar": 100,
+      "rank_2lugar": 50,
+      "rank_3lugar": 25,
+      "rank_top10": 15
     }
   }
 }
