@@ -843,8 +843,7 @@ async function handleEnquete(interaction) {
             perguntaFinal = (await reescreverHipster(pergunta, 'ia')).toUpperCase();
         } catch (_) { perguntaFinal = pergunta.toUpperCase(); }
 
-        const id = Date.now().toString(36).toUpperCase();
-        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+        const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣'];
         const opcoesTexto = opcoes.map((o, i) => `${emojis[i]} **${o.toUpperCase()}**`).join('\n');
 
         const embed = new EmbedBuilder()
@@ -853,24 +852,31 @@ async function handleEnquete(interaction) {
             .setDescription(`\u200b\n**${perguntaFinal}**\n\u200b`)
             .addFields(
                 { name: '━━━━━━━  📊  OPÇÕES  ━━━━━━━', value: opcoesTexto, inline: false },
-                { name: '\u200b', value: `> 🆔 ID: \`${id}\`\n> ⏱️ Duração: \`${duracao}\`\n> 👤 Criada por: ${interaction.member}`, inline: false }
+                { name: '\u200b', value: `> ⏱️ Duração: \`${duracao}\`\n> 👤 Criada por: ${interaction.member}\n> 👇 **Clique no emoji para votar!**`, inline: false }
             )
-            .setFooter({ text: 'Fuminho 🌿 · Vote com /enquete votar' })
+            .setFooter({ text: 'Fuminho 🌿 · Clique no emoji abaixo para votar!' })
             .setTimestamp();
 
-        const canalEnquete = await getChannel(interaction, 'avisos');
+        // Enviar no canal fixo de enquetes
+        const canalEnquete = await interaction.client.channels.fetch('1446667977372991669').catch(() => interaction.channel);
         const msg = await canalEnquete.send({ embeds: [embed] });
 
-        // Salvar enquete no banco
+        // Adicionar reações automáticas
+        for (let i = 0; i < opcoes.length; i++) {
+            await msg.react(emojis[i]).catch(() => {});
+        }
+
+        // Salvar enquete no banco (sem ID visível)
         const db2 = require('../database/database');
+        const id = msg.id; // usar ID da mensagem como chave
         db2.salvarEnquete(guildId, id, {
             id, pergunta: perguntaFinal, opcoes,
-            votos: {}, criador: interaction.user.id,
+            criador: interaction.user.id,
             messageId: msg.id, canalId: canalEnquete.id,
             timestamp: Date.now(), ativa: true, duracao
         });
 
-        return interaction.editReply({ content: `✅ Enquete \`${id}\` criada em ${canalEnquete}!` });
+        return interaction.editReply({ content: `✅ Enquete criada em ${canalEnquete}! As pessoas votam clicando nos emojis. 🌿` });
     }
 
     // ── VOTAR ──
@@ -932,23 +938,46 @@ async function handleEnquete(interaction) {
     // ── ENCERRAR ──
     if (sub === 'encerrar') {
         if (!isStaff(interaction)) return interaction.reply({ content: 'Só a Staff.', flags: [MessageFlags.Ephemeral] });
-        const id = interaction.options.getString('id').toUpperCase();
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+        // Listar enquetes ativas para o staff escolher
         const db2 = require('../database/database');
-        const enquete = db2.getEnquete(guildId, id);
-        if (!enquete) return interaction.reply({ content: `Enquete \`${id}\` não encontrada.`, flags: [MessageFlags.Ephemeral] });
-        if (!enquete.ativa) return interaction.reply({ content: 'Enquete já encerrada!', flags: [MessageFlags.Ephemeral] });
+        const ativas = Object.values(db2.getEnquetes(guildId)).filter(e => e.ativa);
+        if (!ativas.length) return interaction.editReply({ content: 'Nenhuma enquete ativa no momento!' });
 
-        enquete.ativa = false;
-        db2.salvarEnquete(guildId, id, enquete);
+        // Pegar a mais recente se não especificou ID
+        const idParam = interaction.options.getString('id');
+        let enquete;
+        if (idParam) {
+            enquete = db2.getEnquete(guildId, idParam);
+        } else {
+            enquete = ativas.sort((a, b) => b.timestamp - a.timestamp)[0];
+        }
+        if (!enquete) return interaction.editReply({ content: 'Enquete não encontrada!' });
+        if (!enquete.ativa) return interaction.editReply({ content: 'Enquete já encerrada!' });
 
+        // Buscar a mensagem e contar as reações
+        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
         const contagem = {};
         enquete.opcoes.forEach((_, i) => contagem[i] = 0);
-        Object.values(enquete.votos).forEach(v => contagem[v] = (contagem[v] || 0) + 1);
+
+        try {
+            const canal = await interaction.client.channels.fetch(enquete.canalId);
+            const msg = await canal.messages.fetch(enquete.messageId);
+            for (let i = 0; i < enquete.opcoes.length; i++) {
+                const reaction = msg.reactions.cache.find(r => r.emoji.name === emojis[i]);
+                // -1 para não contar o próprio bot
+                contagem[i] = reaction ? Math.max(0, reaction.count - 1) : 0;
+            }
+        } catch (_) {}
+
+        enquete.ativa = false;
+        db2.salvarEnquete(guildId, enquete.id, enquete);
+
         const total = Object.values(contagem).reduce((a, b) => a + b, 0);
         const vencedorIdx = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0];
         const vencedor = enquete.opcoes[vencedorIdx]?.toUpperCase() || 'EMPATE';
 
-        const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
         const barras = enquete.opcoes.map((op, i) => {
             const qt = contagem[i] || 0;
             const pct = total > 0 ? Math.round((qt / total) * 100) : 0;
@@ -968,11 +997,11 @@ async function handleEnquete(interaction) {
             .setTimestamp();
 
         try {
-            const canal = await interaction.guild.channels.fetch(enquete.canalId);
+            const canal = await interaction.client.channels.fetch(enquete.canalId);
             await canal.send({ embeds: [embed] });
         } catch (_) {}
 
-        return interaction.reply({ content: `✅ Enquete \`${id}\` encerrada! Vencedor: **${vencedor}**`, flags: [MessageFlags.Ephemeral] });
+        return interaction.editReply({ content: `✅ Enquete encerrada! Vencedor: **${vencedor}** 🏆` });
     }
 
     // ── LISTAR ──
@@ -1051,7 +1080,7 @@ async function handleAjuda(interaction) {
             { name: '🏆 RANK MENSAL',  value: '`/rank ver` — Ver rank do mes\n`/rank meta` — Mudar meta (Staff)\n`/rank fechar` — Fechar mes e dar pontos (Staff)\n`/rank resetar` — Zerar rank (Staff)', inline: false },
             { name: '🌿 PONTOS',       value: '`/pontos ver` — Ver seus pontos e nivel\n`/pontos ranking` — Top 10 geral\n`/pontos dar` — Dar pontos (Staff)', inline: false },
             { name: '🕐 PONTO',        value: '`/ponto entrada` — Registrar chegada\n`/ponto saida` — Registrar saida + tempo', inline: false },
-            { name: '🗳️ ENQUETES',    value: '`/enquete criar` — Criar enquete (Staff)\n`/enquete votar` — Votar\n`/enquete resultado` — Ver resultado (Staff)\n`/enquete listar` — Ver enquetes abertas', inline: false },
+            { name: '🗳️ ENQUETES',    value: '`/enquete criar` — Criar enquete (Staff)\n`/enquete encerrar` — Encerrar e ver resultado (Staff)\n`/enquete listar` — Ver enquetes abertas\n• Para votar: clique no emoji da opção na mensagem!', inline: false },
             { name: '📜 SERVIDOR',     value: '`/regras` — Ver ou editar regras\n`/notificar` — YouTube, Twitch e Kick', inline: false },
             { name: '🌿 HIPSTER IA',   value: '`/hipster texto:` — Reescreve qualquer mensagem em tom hippie\n• Modo `basico` — rápido e sem IA\n• Modo `ia` — usa Google Gemini (mais criativo)', inline: false }
         );
