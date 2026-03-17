@@ -1,0 +1,8 @@
+database/data/
+*.log
+.env
+.env.*
+node_modules/
+*.tmp
+.git/
+tmp/
