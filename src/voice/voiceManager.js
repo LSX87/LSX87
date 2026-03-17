@@ -6,51 +6,38 @@ const {
     getVoiceConnection,
 } = require('@discordjs/voice');
 
-// tweetnacl para criptografia — puro JS, sem compilação nativa
-try {
-    require('tweetnacl');
-    console.log('[VOICE] tweetnacl OK');
-} catch (err) {
-    console.error('[VOICE] tweetnacl FALHOU:', err.message);
-}
+try { require('tweetnacl'); console.log('[VOICE] tweetnacl OK'); }
+catch (err) { console.error('[VOICE] tweetnacl erro:', err.message); }
 
 const conexoes = new Map();
 
 async function entrarNoCanal(member, guild) {
     const canalId = member.voice?.channelId;
-    console.log('[VOICE] Tentando entrar no canal:', canalId, '| guild:', guild.name);
+    if (!canalId) return null;
 
-    if (!canalId) {
-        console.log('[VOICE] Membro não está em canal de voz');
-        return null;
-    }
-
-    // Verifica permissões do bot no canal
+    // Log de permissões
     const canal = guild.channels.cache.get(canalId);
     if (canal) {
         const perms = canal.permissionsFor(guild.members.me);
-        console.log('[VOICE] Permissões no canal:', {
-            Connect: perms?.has('Connect'),
-            Speak: perms?.has('Speak'),
-            MoveMembers: perms?.has('MoveMembers'),
-        });
-        if (!perms?.has('Connect') || !perms?.has('Speak')) {
-            console.error('[VOICE] FALTA PERMISSÃO: Connect ou Speak');
+        const temConnect = perms?.has('Connect');
+        const temSpeak   = perms?.has('Speak');
+        console.log(`[VOICE] Permissões — Connect:${temConnect} Speak:${temSpeak}`);
+        if (!temConnect || !temSpeak) {
+            console.error('[VOICE] Sem permissão!');
             return null;
         }
     }
 
-    // Destruir conexão existente
+    // Destrói conexão anterior
     const existente = getVoiceConnection(guild.id);
     if (existente) {
-        console.log('[VOICE] Destruindo conexão existente');
         try { existente.destroy(); } catch (_) {}
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
     }
 
     let conexao;
     try {
-        console.log('[VOICE] Chamando joinVoiceChannel...');
+        console.log('[VOICE] joinVoiceChannel iniciando...');
         conexao = joinVoiceChannel({
             channelId: canalId,
             guildId: guild.id,
@@ -58,49 +45,49 @@ async function entrarNoCanal(member, guild) {
             selfDeaf: false,
             selfMute: false,
         });
-        console.log('[VOICE] joinVoiceChannel OK, aguardando Ready...');
     } catch (err) {
-        console.error('[VOICE] joinVoiceChannel ERRO:', err.message);
+        console.error('[VOICE] joinVoiceChannel falhou:', err.message);
         return null;
     }
 
-    try {
-        await entersState(conexao, VoiceConnectionStatus.Ready, 30_000);
-        console.log('[VOICE] Conectado com sucesso em', guild.name);
-        conexoes.set(guild.id, conexao);
+    // Log cada mudança de estado
+    conexao.on('stateChange', (old, novo) => {
+        console.log(`[VOICE] Estado: ${old.status} → ${novo.status}`);
+    });
+    conexao.on('error', err => console.error('[VOICE] Erro:', err.message));
 
-        conexao.on(VoiceConnectionStatus.Disconnected, async () => {
-            console.log('[VOICE] Desconectado — tentando reconectar...');
-            try {
-                await Promise.race([
-                    entersState(conexao, VoiceConnectionStatus.Signalling, 5_000),
-                    entersState(conexao, VoiceConnectionStatus.Connecting, 5_000),
-                ]);
-                console.log('[VOICE] Reconectado!');
-            } catch {
-                console.log('[VOICE] Reconexão falhou, destruindo');
-                try { conexao.destroy(); } catch (_) {}
-                conexoes.delete(guild.id);
-            }
-        });
+    // Aguarda Ready — 3 tentativas de 10s cada
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        try {
+            console.log(`[VOICE] Tentativa ${tentativa}/3 — aguardando Ready...`);
+            await entersState(conexao, VoiceConnectionStatus.Ready, 10_000);
+            console.log('[VOICE] Conectado com sucesso!');
+            conexoes.set(guild.id, conexao);
 
-        conexao.on('error', err => {
-            console.error('[VOICE] Erro na conexão:', err.message);
-        });
+            conexao.on(VoiceConnectionStatus.Disconnected, async () => {
+                try {
+                    await Promise.race([
+                        entersState(conexao, VoiceConnectionStatus.Signalling, 5_000),
+                        entersState(conexao, VoiceConnectionStatus.Connecting, 5_000),
+                    ]);
+                } catch {
+                    try { conexao.destroy(); } catch (_) {}
+                    conexoes.delete(guild.id);
+                }
+            });
 
-        // Log de mudanças de estado
-        conexao.on('stateChange', (old, novo) => {
-            console.log(`[VOICE] Estado: ${old.status} → ${novo.status}`);
-        });
-
-        return conexao;
-    } catch (err) {
-        console.error('[VOICE] Falha ao atingir Ready:', err.message);
-        console.error('[VOICE] Estado atual:', conexao.state?.status);
-        try { conexao.destroy(); } catch (_) {}
-        conexoes.delete(guild.id);
-        return null;
+            return conexao;
+        } catch {
+            const estado = conexao.state?.status;
+            console.log(`[VOICE] Tentativa ${tentativa} falhou. Estado: ${estado}`);
+            if (tentativa < 3) await new Promise(r => setTimeout(r, 2000));
+        }
     }
+
+    console.error('[VOICE] Todas as tentativas falharam');
+    try { conexao.destroy(); } catch (_) {}
+    conexoes.delete(guild.id);
+    return null;
 }
 
 function sairDoCanal(guildId) {
