@@ -194,15 +194,11 @@ const SLASH_COMMANDS = [
             { type: 3, name: 'opcoes', description: 'Opções separadas por vírgula (ex: Sim,Não,Talvez)', required: true },
             { type: 3, name: 'duracao', description: 'Duração (ex: 1h, 30min, 1d)', required: false }
         ]},
-        { type: 1, name: 'votar', description: 'Votar em uma enquete', options: [
-            { type: 3, name: 'id', description: 'ID da enquete', required: true },
-            { type: 3, name: 'opcao', description: 'Número da opção', required: true }
-        ]},
         { type: 1, name: 'resultado', description: 'Ver resultado de uma enquete (Staff)', options: [
-            { type: 3, name: 'id', description: 'ID da enquete', required: true }
+            { type: 3, name: 'id', description: 'ID da mensagem (opcional)', required: false }
         ]},
-        { type: 1, name: 'encerrar', description: 'Encerrar enquete (Staff)', options: [
-            { type: 3, name: 'id', description: 'ID da enquete', required: true }
+        { type: 1, name: 'encerrar', description: 'Encerrar enquete e ver resultado (Staff)', options: [
+            { type: 3, name: 'id', description: 'ID da mensagem (opcional — pega a mais recente)', required: false }
         ]},
         { type: 1, name: 'listar', description: 'Listar enquetes abertas' }
     ]},
