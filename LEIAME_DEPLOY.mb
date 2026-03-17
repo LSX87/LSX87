@@ -1,0 +1,60 @@
+# Fuminho Bot 🌿 — Deploy no Railway
+
+## PASSO A PASSO COMPLETO
+
+### 1. Criar conta no Railway
+- Acesse **railway.com**
+- Clique em **Start a New Project** → **Login with GitHub**
+- Crie uma conta no GitHub se não tiver (é grátis)
+
+### 2. Subir o código
+- No Railway: **New Project** → **Deploy from GitHub repo**
+- Faça upload do zip ou use GitHub:
+  - Opção fácil: vá em **github.com** → **New repository** → crie um repo privado
+  - Arraste os arquivos para o GitHub
+  - No Railway selecione esse repositório
+
+### 3. Configurar variáveis de ambiente
+No Railway, clique no seu serviço → **Variables** → adicione:
+```
+DISCORD_TOKEN        = seu token do Discord
+GOOGLE_GEMINI_API_KEY = sua chave Gemini
+ASSEMBLYAI_API_KEY   = sua chave AssemblyAI
+```
+
+### 4. Adicionar Volume persistente (banco de dados)
+- No Railway: clique no serviço → **Volumes**
+- Clique **Add Volume**
+- Mount Path: `/data`
+- Isso garante que o baú, rank e regras não se percam ao reiniciar
+
+### 5. Deploy automático
+- O Railway detecta Node.js e instala tudo automaticamente
+- Após o deploy, o bot fica online 24/7
+
+---
+
+## ESTRUTURA DO BOT
+```
+index.js              ← Arquivo principal
+railway.toml          ← Configuração do Railway
+package.json          ← Dependências
+config.json           ← IDs de canais e cargos
+.env                  ← Suas chaves (NÃO commitar no GitHub!)
+database/database.js  ← Banco de dados (salva em /data no Railway)
+events/               ← Todos os eventos do bot
+src/voice/            ← Sistema de voz completo
+```
+
+## COMANDOS DE VOZ
+- `/entrar` — Bot entra no seu canal de voz e começa a ouvir
+- `/sair_voz` — Bot sai do canal
+- Fale naturalmente — voz → AssemblyAI → Gemini → resposta em voz
+
+## DIFERENÇA Railway vs Discloud
+| | Discloud | Railway |
+|--|--|--|
+| Voz Discord | ❌ Não suporta | ✅ Funciona |
+| Banco persistente | ❌ Reseta | ✅ Volume /data |
+| Plano grátis | ✅ | ✅ $5 crédito grátis |
+| Facilidade | Upload ZIP | GitHub ou ZIP |
