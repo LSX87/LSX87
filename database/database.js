@@ -150,7 +150,7 @@ function setRegras(lista) { set('regras', lista); }
 function baterPonto(userId, userName, displayName, tipo, guildId) {
     const key   = 'ponto_' + guildId + '_' + userId;
     const lista = get(key) || [];
-    const reg   = { tipo, userId, userName, displayName, timestamp: Date.now(), data: new Date().toLocaleString('pt-BR') };
+    const reg   = { tipo, userId, userName, displayName, timestamp: Date.now(), data: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) };
     lista.push(reg);
     set(key, lista);
     return reg;
@@ -162,7 +162,7 @@ function getUltimoPonto(userId, guildId) { const l = get('ponto_' + guildId + '_
 function logChat(userId, userName, displayName, guildId, canalNome, mensagem) {
     const key   = 'chat_' + guildId + '_' + userId;
     const lista = get(key) || [];
-    lista.push({ userId, userName, displayName, canal: canalNome, mensagem: mensagem.substring(0, 500), timestamp: Date.now(), data: new Date().toLocaleString('pt-BR') });
+    lista.push({ userId, userName, displayName, canal: canalNome, mensagem: mensagem.substring(0, 500), timestamp: Date.now(), data: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) });
     if (lista.length > 200) lista.splice(0, lista.length - 200);
     set(key, lista);
 }
@@ -172,7 +172,7 @@ function getChatLog(userId, guildId) { return get('chat_' + guildId + '_' + user
 function logPunicao(userId, userName, guildId, motivo, tipo) {
     const key   = 'punicao_' + guildId + '_' + userId;
     const lista = get(key) || [];
-    lista.push({ userId, userName, motivo, tipo, data: new Date().toLocaleString('pt-BR'), timestamp: Date.now() });
+    lista.push({ userId, userName, motivo, tipo, data: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }), timestamp: Date.now() });
     set(key, lista);
 }
 function getPunicoes(userId, guildId) { return get('punicao_' + guildId + '_' + userId) || []; }
@@ -183,11 +183,11 @@ function setLimpezaConfig(guildId, cfg) { set('limpeza_' + guildId, cfg); }
 
 // ─── EVENTOS / VOTAÇÕES ──────────────────────────────────────────
 function getVotoEvento(eventoKey, userId)          { return get('voto_' + eventoKey + '_' + userId) || null; }
-function setVotoEvento(eventoKey, userId, escolha) { set('voto_' + eventoKey + '_' + userId, { escolha, data: new Date().toLocaleString('pt-BR') }); }
+function setVotoEvento(eventoKey, userId, escolha) { set('voto_' + eventoKey + '_' + userId, { escolha, data: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) }); }
 function getVotosEvento(eventoKey)                 { return get('votos_' + eventoKey) || {}; }
 function addVotoEvento(eventoKey, userId, escolha) {
     const t = getVotosEvento(eventoKey);
-    t[userId] = { escolha, data: new Date().toLocaleString('pt-BR') };
+    t[userId] = { escolha, data: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) };
     set('votos_' + eventoKey, t);
 }
 
