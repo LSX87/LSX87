@@ -188,18 +188,30 @@ const SLASH_COMMANDS = [
         { type: 1, name: 'remover', description: 'Remove regra', options: [{ type: 4, name: 'numero', description: 'Número da regra', required: true }] },
         { type: 1, name: 'editar', description: 'Edita regra', options: [{ type: 4, name: 'numero', description: 'Número', required: true }, { type: 3, name: 'texto', description: 'Novo texto', required: true }] }
     ]},
-    { name: 'votacao', description: '🗳️ Sistema de votações', options: [
-        { type: 1, name: 'ver', description: 'Ver votações abertas' },
-        { type: 1, name: 'votar', description: 'Votar', options: [{ type: 3, name: 'evento', description: 'Votação', required: true, choices: [{ name: 'Formula 1', value: 'formula1' }, { name: 'Copa do Mundo', value: 'copa_mundo' }, { name: 'Olimpíadas', value: 'olimpiadas' }, { name: 'NBA', value: 'nba' }] }, { type: 3, name: 'escolha', description: 'Sua escolha', required: true }] },
-        { type: 1, name: 'resultado', description: 'Ver resultado (Staff)', options: [{ type: 3, name: 'evento', description: 'Votação', required: true, choices: [{ name: 'Formula 1', value: 'formula1' }, { name: 'Copa do Mundo', value: 'copa_mundo' }, { name: 'Olimpíadas', value: 'olimpiadas' }, { name: 'NBA', value: 'nba' }] }] },
-        { type: 1, name: 'anunciar', description: 'Anuncia votação (Staff)', options: [{ type: 3, name: 'evento', description: 'Votação', required: true, choices: [{ name: 'Formula 1', value: 'formula1' }, { name: 'Copa do Mundo', value: 'copa_mundo' }, { name: 'Olimpíadas', value: 'olimpiadas' }, { name: 'NBA', value: 'nba' }] }, { type: 3, name: 'detalhe', description: 'Detalhes', required: false }] }
+    { name: 'enquete', description: '🗳️ Sistema de enquetes', options: [
+        { type: 1, name: 'criar', description: 'Criar nova enquete (Staff)', options: [
+            { type: 3, name: 'pergunta', description: 'Pergunta da enquete', required: true },
+            { type: 3, name: 'opcoes', description: 'Opções separadas por vírgula (ex: Sim,Não,Talvez)', required: true },
+            { type: 3, name: 'duracao', description: 'Duração (ex: 1h, 30min, 1d)', required: false }
+        ]},
+        { type: 1, name: 'votar', description: 'Votar em uma enquete', options: [
+            { type: 3, name: 'id', description: 'ID da enquete', required: true },
+            { type: 3, name: 'opcao', description: 'Número da opção', required: true }
+        ]},
+        { type: 1, name: 'resultado', description: 'Ver resultado de uma enquete (Staff)', options: [
+            { type: 3, name: 'id', description: 'ID da enquete', required: true }
+        ]},
+        { type: 1, name: 'encerrar', description: 'Encerrar enquete (Staff)', options: [
+            { type: 3, name: 'id', description: 'ID da enquete', required: true }
+        ]},
+        { type: 1, name: 'listar', description: 'Listar enquetes abertas' }
     ]},
     { name: 'notificar', description: '🔔 Ver e editar notificações' },
     { name: 'config', description: '⚙️ Painel de configurações (Staff)', options: [
         { type: 1, name: 'servidor', description: 'Nome e moeda' },
         { type: 1, name: 'seguranca', description: 'Punição e filtros' },
         { type: 1, name: 'chat', description: 'Respostas automáticas' },
-        { type: 1, name: 'votacao', description: 'Gerenciar votações' }
+        { type: 1, name: 'enquete', description: 'Gerenciar enquetes' }
     ]},
     { name: 'resposta', description: '💬 Gerencia respostas automáticas (Staff)', options: [
         { type: 1, name: 'adicionar', description: 'Adiciona resposta', options: [{ type: 3, name: 'gatilho', description: 'Palavra-chave', required: true }, { type: 3, name: 'mensagem', description: 'Resposta', required: true }] },
