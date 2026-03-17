@@ -4,6 +4,7 @@ const config = require('../config.json');
 const db     = require('../database/database');
 
 const nomeBot  = () => config.nomeBot || 'Fuminho';
+const moeda    = () => config.moeda || 'R$';
 const fmt      = v  => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const VERDE    = 0x2ECC71;
 const AMARELO  = 0xF1C40F;
@@ -11,9 +12,12 @@ const VERMELHO = 0xE74C3C;
 const ROXO     = 0x9B59B6;
 const AZUL     = 0x3498DB;
 
-// Únicos cargos que têm direito a ganhar pontos
+// Cargos que ganham pontos e aparecem no rank
+// Jump-in e 1474603614294118652 ganham mesmo sendo admins
+// 1445176403547914402 e 1445176402398941329 são só admin (sem pontos)
 const CARGOS_COM_PONTOS = [
     '1450471503001813084', // Jump-in
+    '1474603614294118652', // Admin que ganha pontos
     '1450472254759506035', // Old G
     '1445176418345680997', // Outsider
     '1450471295983550546', // Aliado
@@ -43,17 +47,8 @@ async function atualizarRankNoCanal(guild) {
         const d       = new Date();
         const nomeMes = d.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
 
-        // Filtra só cargos autorizados
-        const rankingFiltrado = [];
-        for (const r of ranking) {
-            try {
-                const member = await guild.members.fetch(r.userId).catch(() => null);
-                if (!member) continue;
-                if (member.roles.cache.has(config.cargos?.staff)) continue;
-                if (!membroTemDireitoAPontos(member)) continue;
-                rankingFiltrado.push({ ...r, member });
-            } catch (_) { continue; }
-        }
+        // Sem filtro por cargo — todo mundo que depositou aparece no rank
+        const rankingFiltrado = ranking.filter(r => r.valorTotal > 0);
 
         const totalDep = rankingFiltrado.reduce((acc, r) => acc + r.valorTotal, 0);
         const pct      = Math.min(100, Math.round((totalDep / meta) * 100));
@@ -62,8 +57,8 @@ async function atualizarRankNoCanal(guild) {
         const medalhas = ['🥇', '🥈', '🥉'];
         const top      = rankingFiltrado.slice(0, 10);
 
-        // Monta menções do top 3 para marcar
-        const mencoes = top.slice(0, 3).map(r => `${r.member}`).join(' ');
+        // Menciona o top 3 pelo ID (sem fetch)
+        const mencoes = top.slice(0, 3).map(r => `<@${r.userId}>`).join(' ');
 
         let rankTexto = '';
         if (top.length === 0) {
@@ -75,7 +70,7 @@ async function atualizarRankNoCanal(guild) {
                 const barMini = '▰'.repeat(mini) + '▱'.repeat(8 - mini);
                 return (
                     `${med} **${r.displayName}**\n` +
-                    `> \`${barMini}\` ${config.moeda} **${fmt(r.valorTotal)}** — ${r.depositos} dep.`
+                    `> \`${barMini}\` ${moeda()} **${fmt(r.valorTotal)}** — ${r.depositos} dep.`
                 );
             }).join('\n\n');
         }
@@ -84,8 +79,8 @@ async function atualizarRankNoCanal(guild) {
             .setColor(0xFEE75C)
             .setTitle(`🏆  RANK DO GUETO — ${nomeMes.toUpperCase()}`)
             .setDescription(
-                `> 🎯 **Meta:** \`${config.moeda} ${fmt(meta)}\`\n` +
-                `> 💰 **Depositado:** \`${config.moeda} ${fmt(totalDep)}\`\n` +
+                `> 🎯 **Meta:** \`${moeda()} ${fmt(meta)}\`\n` +
+                `> 💰 **Depositado:** \`${moeda()} ${fmt(totalDep)}\`\n` +
                 `> 📊 **Progresso:** \`${barra}\` \`${pct}%\`\n` +
                 `> \u200b`
             )
@@ -227,7 +222,7 @@ async function handleBauFlow(message) {
         flowData.questionMessageId = await sendBauQuestion(
             message.channel,
             `💵  ${acao} Dinheiro ${label}`,
-            `> **Saldo atual (${label}):** \`${config.moeda} ${fmt(atual)}\`\n\n> Qual o valor?\n> Ex: \`5000\`, \`10000\``,
+            `> **Saldo atual (${label}):** \`${moeda()} ${fmt(atual)}\`\n\n> Qual o valor?\n> Ex: \`5000\`, \`10000\``,
             flowData.action === '1' ? VERDE : VERMELHO
         );
         return;
@@ -253,10 +248,12 @@ async function handleBauFlow(message) {
 
         if (adicion) {
             const novo      = db.adicionarDinheiroBau(tipo, valor);
-            const rankEntry = db.adicionarAoRank(message.author.id, message.author.tag, message.member.displayName, valor);
 
-            // Só ganha pontos se tiver cargo permitido
+            // Só ganha pontos e aparece no rank se tiver cargo permitido E for dinheiro SUJO
             const temDireito = membroTemDireitoAPontos(message.member);
+            const rankEntry  = (tipo === 'sujo' && temDireito)
+                ? db.adicionarAoRank(message.author.id, message.author.tag, message.member.displayName, valor)
+                : null;
 
             // Base de pontos: limpo=10, sujo=20
             const ptsBauBase = tipo === 'sujo' ? 20 : 10;
@@ -271,7 +268,7 @@ async function handleBauFlow(message) {
             const ptLabel = `+${ptsBau} pts (bônus ${Math.round(pct_bonus * 100)}%)`;
 
             const ptResult = temDireito
-                ? db.adicionarPontos(message.author.id, message.author.tag, message.member.displayName, ptsBau)
+                ? await db.adicionarPontos(message.author.id, message.author.tag, message.member.displayName, ptsBau)
                 : db.getPontos(message.author.id);
 
             // Registra transação para controle anti-trapaça
@@ -295,17 +292,17 @@ async function handleBauFlow(message) {
                     {
                         name: `━━━━━━━  ${label}  DEPOSITADO  ━━━━━━━`,
                         value:
-                            `> **Valor adicionado:** \`${config.moeda} ${fmt(valor)}\`\n` +
-                            `> **Novo saldo (${label}):** \`${config.moeda} ${fmt(novo)}\``,
+                            `> **Valor adicionado:** \`${moeda()} ${fmt(valor)}\`\n` +
+                            `> **Novo saldo (${label}):** \`${moeda()} ${fmt(novo)}\``,
                         inline: false
                     },
                     {
                         name: '━━━━━━━  🏦  BAÚ COMPLETO  ━━━━━━━',
                         value:
-                            `> 🟢 **Dinheiro Limpo:** \`${config.moeda} ${fmt(db.getDinheiroBau('limpo'))}\`\n` +
-                            `> 🔴 **Dinheiro Sujo:** \`${config.moeda} ${fmt(db.getDinheiroBau('sujo'))}\`\n` +
-                            `> 💰 **Total no baú:** \`${config.moeda} ${fmt(db.getTotalDinheiroBau())}\`\n` +
-                            `> 📊  **Progresso da meta:**\n> ${barra}`,
+                            `> 🟢 **Dinheiro Limpo:** \`${moeda()} ${fmt(db.getDinheiroBau('limpo'))}\`\n` +
+                            `> 🔴 **Dinheiro Sujo:** \`${moeda()} ${fmt(db.getDinheiroBau('sujo'))}\`\n` +
+                            `> 💰 **Total no baú:** \`${moeda()} ${fmt(db.getTotalDinheiroBau())}\`\n` +
+                            (tipo === 'sujo' ? `> 📊  **Progresso da meta (sujo):**\n> ${barra}` : `> ℹ️  _Só dinheiro sujo conta pro rank_`),
                         inline: false
                     },
                     {
@@ -326,9 +323,9 @@ async function handleBauFlow(message) {
             const m = await message.channel.send({ embeds: [embed] });
             autoDelete(m);
 
-            // Atualiza o rank no canal APENAS quando for dinheiro sujo
-            if (tipo === 'sujo') {
-                setTimeout(() => atualizarRankNoCanal(message.guild).catch(e => console.error('[RANK AUTO]', e.message)), 1000);
+            // Atualiza o rank automaticamente só quando depositar SUJO
+            if (tipo === 'sujo' && temDireito) {
+                setTimeout(() => atualizarRankNoCanal(message.guild).catch(e => console.error('[RANK AUTO]', e.message)), 1500);
             }
 
             if (ptResult.subiu) {
@@ -355,8 +352,8 @@ async function handleBauFlow(message) {
                     new EmbedBuilder().setColor(VERMELHO)
                         .setTitle('❌  Saldo insuficiente')
                         .setDescription(
-                            `> Você tentou retirar \`${config.moeda} ${fmt(valor)}\`\n` +
-                            `> mas só tem \`${config.moeda} ${fmt(saldoAtual)}\` de dinheiro ${label} no baú.`
+                            `> Você tentou retirar \`${moeda()} ${fmt(valor)}\`\n` +
+                            `> mas só tem \`${moeda()} ${fmt(saldoAtual)}\` de dinheiro ${label} no baú.`
                         )
                         .setFooter({ text: `${nomeBot()} 🌿  ·  some em 10s` })
                 ]});
@@ -380,16 +377,16 @@ async function handleBauFlow(message) {
                         {
                             name: `━━━━━━━  ${label}  RETIRADO  ━━━━━━━`,
                             value:
-                                `> **Valor retirado:** \`${config.moeda} ${fmt(valor)}\`\n` +
-                                `> **Saldo restante (${label}):** \`${config.moeda} ${fmt(novo)}\``,
+                                `> **Valor retirado:** \`${moeda()} ${fmt(valor)}\`\n` +
+                                `> **Saldo restante (${label}):** \`${moeda()} ${fmt(novo)}\``,
                             inline: false
                         },
                         {
                             name: '━━━━━━━  🏦  BAÚ ATUAL  ━━━━━━━',
                             value:
-                                `> 🟢 **Dinheiro Limpo:** \`${config.moeda} ${fmt(db.getDinheiroBau('limpo'))}\`\n` +
-                                `> 🔴 **Dinheiro Sujo:** \`${config.moeda} ${fmt(db.getDinheiroBau('sujo'))}\`\n` +
-                                `> 💰 **Total:** \`${config.moeda} ${fmt(db.getTotalDinheiroBau())}\``,
+                                `> 🟢 **Dinheiro Limpo:** \`${moeda()} ${fmt(db.getDinheiroBau('limpo'))}\`\n` +
+                                `> 🔴 **Dinheiro Sujo:** \`${moeda()} ${fmt(db.getDinheiroBau('sujo'))}\`\n` +
+                                `> 💰 **Total:** \`${moeda()} ${fmt(db.getTotalDinheiroBau())}\``,
                             inline: false
                         },
                         {
@@ -492,7 +489,7 @@ async function handleBauFlow(message) {
             const temDireito = membroTemDireitoAPontos(message.member);
             const ptsItem    = 10;
             const ptResult   = temDireito
-                ? db.adicionarPontos(message.author.id, message.author.tag, message.member.displayName, ptsItem)
+                ? await db.adicionarPontos(message.author.id, message.author.tag, message.member.displayName, ptsItem)
                 : null;
 
             // Registra transação com quantidade para controle anti-trapaça
@@ -613,12 +610,12 @@ async function showBauContents(message) {
         .setTitle('🏛️  BAÚ DO GUETO — INVENTÁRIO COMPLETO')
         .setDescription(
             `> \u200b\n` +
-            `> 🟢 **Limpo:** \`${config.moeda} ${fmt(limpo)}\` _(${pctLimpo}%)_\n` +
-            `> 🔴 **Sujo:**  \`${config.moeda} ${fmt(sujo)}\` _(${pctSujo}%)_\n` +
+            `> 🟢 **Limpo:** \`${moeda()} ${fmt(limpo)}\` _(${pctLimpo}%)_\n` +
+            `> 🔴 **Sujo:**  \`${moeda()} ${fmt(sujo)}\` _(${pctSujo}%)_\n` +
             `> ─────────────────────\n` +
-            `> 💰 **Total no Baú:** \`${config.moeda} ${fmt(total)}\`\n` +
+            `> 💰 **Total no Baú:** \`${moeda()} ${fmt(total)}\`\n` +
             `> \u200b\n` +
-            `> 📊 **Meta do mês:** \`${config.moeda} ${fmt(meta)}\`\n` +
+            `> 📊 **Meta do mês:** \`${moeda()} ${fmt(meta)}\`\n` +
             `> \`${barra}\` \`${pct}%\`\n` +
             `> \u200b`
         )
