@@ -562,7 +562,7 @@ async function enviarAviso(interaction, flow) {
     let mensagemFinal = flow.mensagem;
     try {
         const { reescreverHipster } = require('../hipsterRewriter');
-        mensagemFinal = await reescreverHipster(flow.mensagem, 'ia');
+        mensagemFinal = (await reescreverHipster(flow.mensagem, 'ia')).toUpperCase();
     } catch (_) { mensagemFinal = flow.mensagem; }
 
     const embed = new EmbedBuilder()
