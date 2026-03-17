@@ -286,6 +286,17 @@ function removerPontos(userId, userName, displayName, quantidade) {
 function getNiveisConfig()    { return get('niveis_config') || null; }
 function setNiveisConfig(obj) { set('niveis_config', obj); }
 
+
+// ─── ENQUETES ────────────────────────────────────────────────────
+function getEnquetes(guildId)         { return get('enquetes_' + guildId) || {}; }
+function setEnquetes(guildId, obj)    { set('enquetes_' + guildId, obj); }
+function getEnquete(guildId, id)      { return getEnquetes(guildId)[id] || null; }
+function salvarEnquete(guildId, id, obj) {
+    const todos = getEnquetes(guildId);
+    todos[id] = obj;
+    setEnquetes(guildId, todos);
+}
+
 module.exports = {
     normKey,
     // Baú — dinheiro
@@ -312,6 +323,8 @@ module.exports = {
     getRespostas, setRespostas, adicionarResposta, removerResposta,
     // Níveis
     getNiveisConfig, setNiveisConfig,
+    // Enquetes
+    getEnquetes, setEnquetes, getEnquete, salvarEnquete,
     // Transações / anti-trapaça
     getHistoricoTransacoes, registrarTransacao,
     calcularDesconto, calcularDescontoItem, removerPontos
